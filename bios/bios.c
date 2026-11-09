@@ -852,6 +852,9 @@ void biosmain(void)
     blkdev_boot();
 
     Dsetdrv(bootdev);           /* Set boot drive */
+#if CONF_WITH_APOLLO_V4
+    fill_cookie_jar_nvram();    /* Populate _AKP and _IDT from file-backed NVRAM on C: */
+#endif
     init_default_environment(); /* Build default environment string */
 
 #if ENABLE_RESET_RESIDENT

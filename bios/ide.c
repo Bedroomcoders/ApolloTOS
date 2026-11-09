@@ -131,14 +131,14 @@ struct IDE
 #endif /* MACHINE_M548X */
 
 /* the data register is naturally byteswapped on some hardware */
-#if defined(MACHINE_AMIGA)
+#if defined(MACHINE_AMIGA) || CONF_WITH_APOLLO_V4
 #define IDE_DATA_REGISTER_IS_BYTESWAPPED TRUE
 #else
 #define IDE_DATA_REGISTER_IS_BYTESWAPPED FALSE
 #endif
 
 /* set the following to 1 to use 32-bit data transfer */
-#if CONF_ATARI_HARDWARE
+#if CONF_ATARI_HARDWARE && !CONF_WITH_APOLLO_V4
 #define IDE_32BIT_XFER TRUE
 #else
 #define IDE_32BIT_XFER FALSE
@@ -157,6 +157,37 @@ struct IDE
 #endif
 
 #if CONF_ATARI_HARDWARE
+
+#if CONF_WITH_APOLLO_V4
+#define NUM_IDE_INTERFACES  1
+
+struct IDE
+{
+    UBYTE filler00[4];
+    UBYTE features;         /* 0x0004: Read: error / Write: features */
+    UBYTE filler06[3];
+    UBYTE sector_count;     /* 0x0008 */
+    UBYTE filler0a[3];
+    UBYTE sector_number;    /* 0x000c */
+    UBYTE filler0e[3];
+    UBYTE cylinder_low;     /* 0x0010 */
+    UBYTE filler12[3];
+    UBYTE cylinder_high;    /* 0x0014 */
+    UBYTE filler16[3];
+    UBYTE head;             /* 0x0018 */
+    UBYTE filler1a[3];
+    UBYTE command;          /* 0x001c: Read: status / Write: ATA command */
+    UBYTE filler1e[4091];
+    UBYTE control;          /* 0x1018: Read: alternate status / Write: device control */
+    UBYTE filler1019[3];
+    UBYTE address;          /* 0x101c: Write: Not used */
+    UBYTE filler02[4067];
+    UWORD data;             /* 0x2000: 16/32-bit data transfer */
+};
+
+#define ide_interface           ((volatile struct IDE *)0x00f00000)
+
+#else /* !CONF_WITH_APOLLO_V4 */
 
 #ifdef MACHINE_FIREBEE
 #define NUM_IDE_INTERFACES  2
@@ -190,6 +221,8 @@ struct IDE
 };
 
 #define ide_interface           ((volatile struct IDE *)0xfff00000)
+
+#endif /* CONF_WITH_APOLLO_V4 */
 
 #else
 
