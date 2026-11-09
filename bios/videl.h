@@ -88,6 +88,11 @@ WORD videl_check_moderez(WORD moderez);
 void videl_get_current_mode_info(UWORD *planes, UWORD *hz_rez, UWORD *vt_rez);
 void videl_setrez(WORD rez, WORD videlmode);
 
+#if CONF_WITH_APOLLO_V4
+WORD saga_pip_control(WORD cmd, WORD arg1, WORD arg2, WORD arg3, WORD arg4);
+ULONG v4_reserved_vram_size(void);
+#endif
+
 extern WORD current_video_mode;
 
 #endif /* CONF_WITH_VIDEL */

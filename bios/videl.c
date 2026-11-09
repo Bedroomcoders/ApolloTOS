@@ -305,6 +305,397 @@ static const VMODE_ENTRY other_init_table[] = {
     { -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 };
 
+#if CONF_WITH_APOLLO_V4
+
+/*
+ * Apollo V4 SAGA Video Controller implementation
+ */
+#define SAGA_PIP_X_START        (*(volatile UWORD *)0x00FFFED0UL)
+#define SAGA_PIP_Y_START        (*(volatile UWORD *)0x00FFFED2UL)
+#define SAGA_PIP_X_END          (*(volatile UWORD *)0x00FFFED4UL)
+#define SAGA_PIP_Y_END          (*(volatile UWORD *)0x00FFFED6UL)
+#define SAGA_PIP_FB_BPL         (*(volatile ULONG *)0x00FFFED8UL)
+#define SAGA_PIP_VIDEO_MODE     (*(volatile UWORD *)0x00FFFEDCUL)
+#define SAGA_PIP_COLORKEY       (*(volatile UWORD *)0x00FFFEDEUL)
+#define SAGA_PIP_MODULO         (*(volatile UWORD *)0x00FFFEE0UL)
+#define SAGA_VIDEO_MODULO       (*(volatile UWORD *)0x00FFFEE6UL)
+#define SAGA_VIDEO_PLANE_PTR    (*(volatile const UBYTE **)0x00FFFEECUL)
+#define SAGA_VIDEO_MODE         (*(volatile UWORD *)0x00FFFEF4UL)
+#define STE_LINE_OFFSET         (*(volatile UBYTE *)0xFFFF820FUL)
+
+static const UWORD saga_vga_res_table[8] = {
+    0x0100, /* 0: TV 40col non-interlace (320x200) */
+    0x0300, /* 1: TV 40col interlace     (320x256) */
+    0x1000, /* 2: TV 80col non-interlace (640x200) */
+    0x0400, /* 3: TV 80col interlace     (640x400) */
+    0x0300, /* 4: VGA 40col non-double   (320x256) */
+    0x0200, /* 5: VGA 40col line-double  (320x240) */
+    0x0500, /* 6: VGA 80col non-double   (640x480) */
+    0x0b00  /* 7: VGA 80col line-double  (640x360) */
+};
+
+static const UWORD bpp_to_saga_fmt[8] = {
+    0x0008, /* 0: VIDEL_1BPP      -> SAGA PLANAR1 (1bpp) */
+    0x0009, /* 1: VIDEL_2BPP      -> SAGA PLANAR2 (2bpp) */
+    0x000a, /* 2: VIDEL_4BPP      -> SAGA PLANAR4 (4bpp) */
+    0x000b, /* 3: VIDEL_8BPP      -> SAGA PLANAR8 (8bpp) */
+    0x0002, /* 4: VIDEL_TRUECOLOR -> SAGA RGB16  (16bpp) */
+    0x0005, /* 5: 32bpp           -> SAGA RGB32  (32bpp) */
+    0x0004, /* 6: 24bpp           -> SAGA RGB24  (24bpp) */
+    0x0001  /* 7: 8bpp chunky     -> SAGA CLUT8  (8bpp)  */
+};
+
+static const struct {
+    UWORD width;
+    UWORD height;
+} saga_res_table[21] = {
+    {  320,  200 }, /*  0: default   */
+    {  320,  200 }, /*  1: 320x200   */
+    {  320,  240 }, /*  2: 320x240   */
+    {  320,  256 }, /*  3: 320x256   */
+    {  640,  400 }, /*  4: 640x400   */
+    {  640,  480 }, /*  5: 640x480   */
+    {  640,  512 }, /*  6: 640x512   */
+    {  960,  540 }, /*  7: 960x540   */
+    {  480,  270 }, /*  8: 480x270   */
+    {  304,  224 }, /*  9: 304x224   */
+    { 1280,  720 }, /* 10: 1280x720  */
+    {  640,  360 }, /* 11: 640x360   */
+    {  800,  600 }, /* 12: 800x600   */
+    { 1024,  768 }, /* 13: 1024x768  */
+    {  720,  576 }, /* 14: 720x576   */
+    {  848,  480 }, /* 15: 848x480   */
+    {  640,  200 }, /* 16: 640x200   */
+    { 1920, 1080 }, /* 17: 1920x1080 */
+    { 1280, 1024 }, /* 18: 1280x1024 */
+    { 1280,  800 }, /* 19: 1280x800  */
+    { 1440,  900 }  /* 20: 1440x900  */
+};
+
+static const UWORD saga_fmt_bpp[12] = {
+    1, 8, 16, 16, 24, 32, 16, 16, 1, 2, 4, 8
+};
+
+WORD current_video_mode;
+
+static UWORD v4_pip_width;
+static UWORD v4_pip_height;
+static UWORD v4_pip_x;
+static UWORD v4_pip_y;
+
+static void v4_get_mode_info(UWORD mode, UWORD *planes, UWORD *hz_rez, UWORD *vt_rez)
+{
+    UWORD p, hz, vt;
+
+    if (mode & 0x4000)
+    {
+        UWORD res, fmt;
+
+        mode &= 0xbfff;
+        res = (mode >> 8) & 0xff;
+        if (res < 1 || res > 20)
+            res = 1;
+        fmt = mode & 0xff;
+        if (fmt < 1 || fmt > 11)
+            fmt = 1;
+
+        hz = saga_res_table[res].width;
+        vt = saga_res_table[res].height;
+        p  = saga_fmt_bpp[fmt];
+    }
+    else if (mode & VIDEL_COMPAT)
+    {
+        switch (mode & 7)
+        {
+        case VIDEL_4BPP:
+            if (mode & VIDEL_80COL)
+            {
+                hz = 640;
+                vt = 480;
+                p  = 4;
+            }
+            else
+            {
+                hz = 320;
+                vt = 200;
+                p  = 4;
+            }
+            break;
+        case VIDEL_8BPP:
+            hz = 320;
+            vt = 480;
+            p  = 8;
+            break;
+        case VIDEL_2BPP:
+            hz = 640;
+            vt = 200;
+            p  = 2;
+            break;
+        default:
+            hz = 640;
+            vt = 400;
+            p  = 1;
+            break;
+        }
+    }
+    else
+    {
+        if (mode & VIDEL_VGA)
+        {
+            vt = 480;
+        }
+        else
+        {
+            mode ^= VIDEL_VERTICAL;
+            vt = 400;
+        }
+
+        hz = (mode & VIDEL_80COL) ? 640 : 320;
+        if (mode & VIDEL_VERTICAL)
+            vt >>= 1;
+
+        p = saga_fmt_bpp[bpp_to_saga_fmt[mode & 7]];
+    }
+
+    if (planes)
+        *planes = p;
+    if (hz_rez)
+        *hz_rez = hz;
+    if (vt_rez)
+        *vt_rez = vt;
+}
+
+static UWORD get_videl_bpp(void)
+{
+    UWORD planes;
+
+    v4_get_mode_info(current_video_mode, &planes, NULL, NULL);
+    return planes;
+}
+
+const VMODE_ENTRY *lookup_videl_mode(WORD mode)
+{
+    MAYBE_UNUSED(vga_init_table);
+    MAYBE_UNUSED(pal_init_table);
+    MAYBE_UNUSED(other_init_table);
+    return NULL;
+}
+
+WORD vsetmode(WORD mode)
+{
+    WORD old_mode = current_video_mode;
+
+    if (mode == -1)
+        return old_mode;
+
+    current_video_mode = mode;
+    SAGA_VIDEO_MODULO = 0;
+    STE_LINE_OFFSET = 0;
+
+    if ((UWORD)mode & 0x4000)
+    {
+        UWORD sm = (UWORD)mode & 0xbfff;
+
+        SAGA_VIDEO_MODE = sm;
+        sshiftmod = ((sm & 0xff) == 0x08) ? ST_HIGH : FALCON_REZ;
+    }
+    else if (mode & VIDEL_COMPAT)
+    {
+        switch (mode & 7)
+        {
+        case VIDEL_4BPP:
+            if (mode & VIDEL_80COL)
+            {
+                SAGA_VIDEO_MODE = 0x050a;
+                sshiftmod = FALCON_REZ;
+            }
+            else
+            {
+                *(volatile UBYTE *)ST_SHIFTER = ST_LOW;
+                sshiftmod = ST_LOW;
+            }
+            break;
+        case VIDEL_8BPP:
+            SAGA_VIDEO_MODE = 0x030b;
+            sshiftmod = FALCON_REZ;
+            break;
+        case VIDEL_2BPP:
+            *(volatile UBYTE *)ST_SHIFTER = ST_MEDIUM;
+            sshiftmod = ST_MEDIUM;
+            break;
+        default:
+            *(volatile UBYTE *)ST_SHIFTER = ST_HIGH;
+            sshiftmod = ST_HIGH;
+            break;
+        }
+    }
+    else
+    {
+        int idx = ((mode & VIDEL_VGA) ? 4 : 0)
+                + ((mode & VIDEL_80COL) ? 2 : 0)
+                + ((mode & VIDEL_VERTICAL) ? 1 : 0);
+        UWORD bpp = mode & 7;
+
+        SAGA_VIDEO_MODE = saga_vga_res_table[idx] | bpp_to_saga_fmt[bpp];
+        sshiftmod = (bpp == VIDEL_1BPP) ? ST_HIGH : FALCON_REZ;
+    }
+
+    return old_mode;
+}
+
+WORD vmontype(void)
+{
+    return MON_VGA;
+}
+
+WORD vsetsync(WORD external)
+{
+    MAYBE_UNUSED(external);
+    return 0;
+}
+
+LONG vgetsize(WORD mode)
+{
+    UWORD planes, hz_rez, vt_rez;
+
+    v4_get_mode_info(mode, &planes, &hz_rez, &vt_rez);
+    return ((LONG)(hz_rez >> 3) * (LONG)vt_rez) * (LONG)planes;
+}
+
+WORD vfixmode(WORD mode)
+{
+    if ((UWORD)mode & 0x4000)
+    {
+        UWORD m = (UWORD)mode & 0xbfff;
+        UWORD res = m >> 8;
+        UWORD fmt;
+
+        if (res < 1 || res > 20)
+            m = (m & 0x00ff) | 0x0100;
+        fmt = m & 0xff;
+        if (fmt < 1 || fmt > 11)
+            m = (m & 0xff00) | 0x0001;
+
+        return (WORD)(m | 0x4000);
+    }
+
+    if (mode & VIDEL_COMPAT)
+    {
+        switch (mode & 7)
+        {
+        case VIDEL_4BPP:
+            return (mode & VIDEL_80COL) ? 0x009a : FALCON_ST_LOW;
+        case VIDEL_8BPP:
+            return 0x0093;
+        case VIDEL_2BPP:
+            return FALCON_ST_MEDIUM;
+        default:
+            return FALCON_ST_HIGH;
+        }
+    }
+
+    if (!(mode & VIDEL_VGA))
+        mode ^= (VIDEL_VERTICAL | VIDEL_VGA);
+
+    return mode & 0x019f;
+}
+
+WORD videl_check_moderez(WORD moderez)
+{
+    WORD current_mode, return_mode;
+
+    if (moderez < 0)
+        return 0;
+
+    current_mode = current_video_mode;
+    return_mode = vfixmode(moderez);
+    return (return_mode == current_mode) ? 0 : return_mode;
+}
+
+void videl_get_current_mode_info(UWORD *planes, UWORD *hz_rez, UWORD *vt_rez)
+{
+    v4_get_mode_info(current_video_mode, planes, hz_rez, vt_rez);
+}
+
+void videl_setrez(WORD rez, WORD videlmode)
+{
+    switch (rez)
+    {
+    case ST_LOW:
+        videlmode = FALCON_ST_LOW;
+        break;
+    case ST_MEDIUM:
+        videlmode = FALCON_ST_MEDIUM;
+        break;
+    case ST_HIGH:
+        videlmode = FALCON_ST_HIGH;
+        break;
+    case 4: /* TT_MEDIUM: 640x480x4bpp */
+        videlmode = 0x009a;
+        break;
+    case 6: /* TT_HIGH: SAGA 1280x1024x1bpp */
+        videlmode = 0x5208;
+        break;
+    case 7: /* TT_LOW: 320x480x8bpp */
+        videlmode = 0x0093;
+        break;
+    }
+
+    vsetmode(videlmode);
+}
+
+WORD saga_pip_control(WORD cmd, WORD arg1, WORD arg2, WORD arg3, WORD arg4)
+{
+    ULONG fb;
+
+    switch (cmd)
+    {
+    case 1:
+        SAGA_PIP_VIDEO_MODE = 0;
+        break;
+    case 2:
+        SAGA_PIP_X_START = v4_pip_x + 16;
+        SAGA_PIP_Y_START = v4_pip_y + 8;
+        SAGA_PIP_X_END   = v4_pip_x + v4_pip_width + 16;
+        SAGA_PIP_Y_END   = v4_pip_y + v4_pip_height + 8;
+        SAGA_PIP_MODULO  = 0;
+        SAGA_PIP_COLORKEY = 0x8000;
+        SAGA_PIP_VIDEO_MODE = 0x0002;
+        break;
+    case 3:
+        fb = ((ULONG)(UWORD)arg1 << 16) | (UWORD)arg2;
+        SAGA_PIP_FB_BPL = fb;
+        break;
+    case 4:
+        v4_pip_width = (UWORD)arg1;
+        v4_pip_height = (UWORD)arg2;
+        SAGA_PIP_X_END = v4_pip_x + v4_pip_width + 16;
+        SAGA_PIP_Y_END = v4_pip_y + v4_pip_height + 8;
+        break;
+    case 5:
+        v4_pip_x = (UWORD)arg1;
+        v4_pip_y = (UWORD)arg2;
+        SAGA_PIP_X_START = v4_pip_x + 16;
+        SAGA_PIP_Y_START = v4_pip_y + 8;
+        SAGA_PIP_X_END   = v4_pip_x + v4_pip_width + 16;
+        SAGA_PIP_Y_END   = v4_pip_y + v4_pip_height + 8;
+        break;
+    default:
+        return -1;
+    }
+
+    MAYBE_UNUSED(arg3);
+    MAYBE_UNUSED(arg4);
+    return 0;
+}
+
+ULONG v4_reserved_vram_size(void)
+{
+    return 0x01356000UL;
+}
+
+#else /* !CONF_WITH_APOLLO_V4 */
+
 /*
  * functions for VIDEL programming
  */
@@ -756,6 +1147,8 @@ LONG vgetsize(WORD inmode)
     return (LONG)determine_width(mode) * 2 * height;
 }
 
+#endif /* CONF_WITH_APOLLO_V4 */
+
 /*
  * convert from Falcon palette format to STe palette format
  */
@@ -908,6 +1301,7 @@ WORD vgetrgb(WORD index,WORD count,ULONG *rgb)
     return 0; /* OK */
 }
 
+#if !CONF_WITH_APOLLO_V4
 /*
  * Fix Videl mode
  *
@@ -991,6 +1385,7 @@ void videl_setrez(WORD rez, WORD videlmode)
 
     vsetmode(videlmode);    /* sets 'sshiftmod' */
 }
+#endif /* !CONF_WITH_APOLLO_V4 */
 
 /*
  * Initialise Falcon palette
@@ -1039,6 +1434,13 @@ void initialise_falcon_palette(WORD mode)
         for (i = 0; i < 16; i++)
             col_regs[i] = ste_shadow_palette[i];
     }
+
+#if CONF_WITH_APOLLO_V4
+    v4_pip_width = 320;
+    v4_pip_height = 200;
+    SAGA_PIP_X_START = 0x3FFF;
+    SAGA_PIP_Y_START = 0x3FFF;
+#endif
 }
 
 /*

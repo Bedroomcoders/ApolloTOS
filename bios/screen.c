@@ -521,9 +521,11 @@ void screen_init_mode(void)
         setphys((const UBYTE *)0x10000L);
 #endif
 
-#if CONF_WITH_NVRAM && !defined(MACHINE_FIREBEE)
+#if CONF_WITH_NVRAM && !defined(MACHINE_FIREBEE) && !CONF_WITH_APOLLO_V4
         /* This is currently disabled on the FireBee, because the VIDEL is
          * unreliable. Some video modes are not displayed well.
+         * On Apollo V4, NVRAM is file-backed on drive C:, which is not yet
+         * mounted when screen_init_mode() runs.
          */
         /* get boot resolution from NVRAM */
         ret = nvmaccess(0, 14, 2, CONST_CAST(UBYTE*, &boot_resolution));
@@ -537,6 +539,7 @@ void screen_init_mode(void)
 
         /* try to ensure it corresponds to monitor */
         current_video_mode = boot_resolution;       /* needed by vfixmode() */
+#if !CONF_WITH_APOLLO_V4
         boot_resolution = vfixmode(boot_resolution);
         if (!lookup_videl_mode(boot_resolution)) {  /* mode isn't in table */
             KDEBUG(("Invalid video mode 0x%04x changed to 0x%04x\n",
@@ -549,6 +552,7 @@ void screen_init_mode(void)
                     boot_resolution,FALCON_DEFAULT_BOOT));
             boot_resolution = FALCON_DEFAULT_BOOT;  /* so use default */
         }
+#endif
 
         /* vsetmode() now uses vfixmode() to adjust the video mode
          * according to the actual monitor
@@ -641,6 +645,12 @@ void screen_init_address(void)
 #if CONF_VRAM_ADDRESS
     vram_size = 0L;         /* unspecified */
     screen_start = (UBYTE *)CONF_VRAM_ADDRESS;
+#elif CONF_WITH_APOLLO_V4
+    MAYBE_UNUSED(calc_vram_size);
+    /* Allocate 600 KB in ST-RAM for standard resolutions; high-res SAGA modes
+     * use the 19.3 MB reserved region at the top of FastRAM. */
+    vram_size = (LONG)v4_reserved_vram_size();
+    screen_start = balloc_stram(0x00096000UL, TRUE);
 #else
     vram_size = calc_vram_size();
     /* videoram is placed just below the phystop */
@@ -916,6 +926,9 @@ void get_pixel_size(WORD *width,WORD *height)
 
 static const UBYTE *atari_physbase(void)
 {
+#if CONF_WITH_APOLLO_V4
+    return *(volatile const UBYTE * const *)0x00FFFEECUL;
+#else
     ULONG addr;
 
 #if CONF_WITH_NOVA
@@ -934,15 +947,25 @@ static const UBYTE *atari_physbase(void)
         addr |= *(volatile UBYTE *) VIDEOBASE_ADDR_LOW;
 
     return (UBYTE *)addr;
+#endif
 }
 
 static void atari_setphys(const UBYTE *addr)
 {
+#if CONF_WITH_APOLLO_V4
+    if ((ULONG)addr <= 0x00FFFFFFUL) {
+        *(volatile UBYTE *) VIDEOBASE_ADDR_HI = ((ULONG) addr) >> 16;
+        *(volatile UBYTE *) VIDEOBASE_ADDR_MID = ((ULONG) addr) >> 8;
+        *(volatile UBYTE *) VIDEOBASE_ADDR_LOW = ((ULONG) addr);
+    }
+    *(volatile const UBYTE **)0x00FFFEECUL = addr;
+#else
     *(volatile UBYTE *) VIDEOBASE_ADDR_HI = ((ULONG) addr) >> 16;
     *(volatile UBYTE *) VIDEOBASE_ADDR_MID = ((ULONG) addr) >> 8;
 
     if (HAS_VIDEL || HAS_TT_SHIFTER || HAS_STE_SHIFTER)
         *(volatile UBYTE *) VIDEOBASE_ADDR_LOW = ((ULONG) addr);
+#endif
 }
 
 static WORD atari_getrez(void)
@@ -1132,9 +1155,17 @@ WORD setscreen(UBYTE *logLoc, const UBYTE *physLoc, WORD rez, WORD videlmode)
             if (videlmode != -1) {
                 videlmode = vfixmode(videlmode);
                 if (!logLoc && !physLoc) {
+#if CONF_WITH_APOLLO_V4
+                    UBYTE *addr;
+                    if ((ULONG)vgetsize(videlmode) <= 0x00096000UL)
+                        addr = phystop - 0x00096000UL;
+                    else
+                        addr = (UBYTE *)(v4_detect_phys_ram_top() - v4_reserved_vram_size());
+#else
                     UBYTE *addr = (UBYTE *)Srealloc(vgetsize(videlmode));
                     if (!addr)      /* Srealloc() failed */
                         return -1;
+#endif
                     KDEBUG(("screen realloc'd to %p\n", addr));
                     v_bas_ad = addr;
                     setphys(addr);
@@ -1142,6 +1173,15 @@ WORD setscreen(UBYTE *logLoc, const UBYTE *physLoc, WORD rez, WORD videlmode)
             }
             oldmode = vsetmode(-1);
         }
+#if CONF_WITH_APOLLO_V4
+        else if (!logLoc && !physLoc) {
+            if ((ULONG)physbase() > 0x00FFFFFFUL) {
+                UBYTE *addr = phystop - 0x00096000UL;
+                v_bas_ad = addr;
+                setphys(addr);
+            }
+        }
+#endif
     }
 #endif
 
