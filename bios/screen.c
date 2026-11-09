@@ -927,7 +927,7 @@ void get_pixel_size(WORD *width,WORD *height)
 static const UBYTE *atari_physbase(void)
 {
 #if CONF_WITH_APOLLO_V4
-    return *(volatile const UBYTE * const *)0x00FFFEECUL;
+    return (const UBYTE *)(*(volatile ULONG *)0x00FFFEECUL);
 #else
     ULONG addr;
 

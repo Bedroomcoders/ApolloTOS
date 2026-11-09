@@ -50,12 +50,21 @@
 #define INFO_LENGTH 40      /* width of info lines (must fit in low-rez) */
 #define LOGO_LENGTH 34      /* must equal length of strings in EmuTOS logo */
 
+#if CONF_WITH_APOLLO_V4
+static const char logo[][LOGO_LENGTH+1] =
+    { " 1  111  11 1  1  11   777 777 777",
+      "1 1 1  1 1 1 1  1 1  1  7  7 7 7  ",
+      "111 111  1 1 1  1 1  1  7  7 7  77",
+      "1 1 1    1 1 1  1 1  1  7  7 7   7",
+      "1 1 1    11  11 11 11   7  777 777" };
+#else
 static const char logo[][LOGO_LENGTH+1] =
     { "11111111111 7777777777  777   7777",
       "1                  7   7   7 7    ",
       "1111   1 1  1   1  7   7   7  777 ",
       "1     1 1 1 1   1  7   7   7     7",
       "11111 1   1  111   7    777  7777 " };
+#endif
 
 /* Print n spaces */
 static void print_spaces(WORD n)
@@ -318,7 +327,11 @@ WORD initinfo(ULONG *pshiftbits)
     /* Print separator followed by blank line */
     set_line();
 
+#if CONF_WITH_APOLLO_V4
+    pair_start(_("ApolloTOS Version")); cprintf("%s", version); pair_end();
+#else
     pair_start(_("EmuTOS Version")); cprintf("%s", version); pair_end();
+#endif
 
     pair_start(_("CPU type"));
 #ifdef __mcoldfire__
@@ -474,5 +487,9 @@ WORD initinfo(ULONG *pshiftbits)
 
 void display_startup_msg(void)
 {
+#if CONF_WITH_APOLLO_V4
+    cprintf("ApolloTOS Version %s\r\n", version);
+#else
     cprintf("EmuTOS Version %s\r\n", version);
+#endif
 }

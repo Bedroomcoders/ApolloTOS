@@ -1872,6 +1872,12 @@ static WORD desk_xlate_fix(void)
     /* translate strings in objects */
     xlate_obj_array(desk_rs_obj, RS_NOBS);
 
+#if CONF_WITH_APOLLO_V4
+    tree[2].ob_spec = (LONG) "- ApolloTOS -";
+    tree[2].ob_x = 13;
+    tree[2].ob_width = 14;
+#endif
+
     /* copies menu item strings to RAM */
     if (copy_menu_items() < 0)
         return -1;
