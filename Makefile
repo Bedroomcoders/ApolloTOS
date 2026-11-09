@@ -285,7 +285,18 @@ OBJDUMP = $(TOOLCHAIN_PREFIX)objdump
 OBJCOPY = $(TOOLCHAIN_PREFIX)objcopy
 
 # the native C compiler, for tools
-NATIVECC = gcc -ansi -pedantic $(WARNFLAGS) -Wextra $(BUILD_TOOLS_OPTFLAGS)
+NATIVECC = /usr/bin/gcc -ansi -pedantic $(WARNFLAGS) -Wextra $(BUILD_TOOLS_OPTFLAGS)
+TOOLDIR = /tmp/apollotos-tools
+$(shell mkdir -p $(TOOLDIR))
+
+# vasm Motorola-syntax assembler for native 68080 / AMMX modules (.vasm)
+VASM = vasmm68k_mot
+ifeq (1,$(ELF))
+VASM_FORMAT = -Felf
+else
+VASM_FORMAT = -Faout -mid=100
+endif
+VASMFLAGS = $(VASM_FORMAT) -m68080 -quiet $(INC)
 
 #
 # source code in bios/
@@ -460,6 +471,7 @@ dirs = $(core_dirs) $(optional_dirs)
 
 vpath %.c $(dirs)
 vpath %.S $(dirs)
+vpath %.vasm $(dirs)
 
 #
 # country-specific settings
@@ -473,8 +485,8 @@ include country.mk
 
 SRC = $(foreach d,$(dirs),$(addprefix $(d)/,$($(d)_src))) $(end_src)
 
-CORE_OBJ = $(foreach d,$(core_dirs),$(patsubst %.c,obj/%.o,$(patsubst %.S,obj/%.o,$($(d)_src)))) $(FONTOBJ_COMMON) obj/libfont.a obj/version.o
-OPTIONAL_OBJ = $(foreach d,$(optional_dirs),$(patsubst %.c,obj/%.o,$(patsubst %.S,obj/%.o,$($(d)_src))))
+CORE_OBJ = $(foreach d,$(core_dirs),$(patsubst %.vasm,obj/%.o,$(patsubst %.c,obj/%.o,$(patsubst %.S,obj/%.o,$($(d)_src))))) $(FONTOBJ_COMMON) obj/libfont.a obj/version.o
+OPTIONAL_OBJ = $(foreach d,$(optional_dirs),$(patsubst %.vasm,obj/%.o,$(patsubst %.c,obj/%.o,$(patsubst %.S,obj/%.o,$($(d)_src)))))
 END_OBJ = $(patsubst %,obj/%.o,$(basename $(notdir $(end_src))))
 OBJECTS = $(CORE_OBJ) $(OPTIONAL_OBJ) $(END_OBJ)
 
@@ -519,8 +531,8 @@ endif
 
 ROM_PADDED = $(if $(UNIQUE),etos$(ROMSIZE)$(UNIQUE).img,etos$(ROMSIZE)k.img)
 
-$(ROM_PADDED): emutos.img mkrom
-	./mkrom pad $(ROMSIZE)k $< $@
+$(ROM_PADDED): emutos.img $(TOOLDIR)/mkrom
+	$(TOOLDIR)/mkrom pad $(ROMSIZE)k $< $@
 
 #
 # 192kB Image
@@ -562,6 +574,21 @@ NODEP += 512
 512: ROMSIZE = 512
 512:
 	$(MAKE) DEF='$(DEF)' OPTFLAGS='$(OPTFLAGS)' UNIQUE=$(UNIQUE) MULTIKEYBD='-k' ROMSIZE=$(ROMSIZE) ROM_PADDED=$(ROM_PADDED) $(ROM_PADDED) REF_OS=TOS404
+	@printf "$(LOCALCONFINFO)"
+
+#
+# 512kB ApolloTOS Image (for Apollo V4 Standalone / Atari core)
+#
+
+.PHONY: apollotos v4atari
+NODEP += apollotos v4atari
+apollotos v4atari: UNIQUE = $(COUNTRY)
+apollotos v4atari: CPUFLAGS = -m68040
+apollotos v4atari: override DEF += -DTARGET_512 -DMACHINE_APOLLO_V4
+apollotos v4atari: ROMSIZE = 512
+apollotos v4atari:
+	@echo "# Building ApolloTOS 512kB V4 Atari image into $(ROM_PADDED)"
+	$(MAKE) CPUFLAGS='$(CPUFLAGS)' DEF='$(DEF)' OPTFLAGS='$(OPTFLAGS)' UNIQUE=$(UNIQUE) MULTIKEYBD='-k' ROMSIZE=$(ROMSIZE) ROM_PADDED=$(ROM_PADDED) $(ROM_PADDED) REF_OS=TOS404
 	@printf "$(LOCALCONFINFO)"
 
 #
@@ -921,17 +948,17 @@ obj/lisaboot.o: obj/ramtos.h
 #
 
 GEN_SRC += bios/ctables.h include/i18nconf.h
-TOCLEAN += localise include/i18nconf.h bios/ctables.h
+TOCLEAN += $(TOOLDIR)/localise* include/i18nconf.h bios/ctables.h
 
-NODEP += localise
-localise: tools/localise.c
+NODEP += $(TOOLDIR)/localise
+$(TOOLDIR)/localise: tools/localise.c
 	$(NATIVECC) $< -o $@
 
-bios/ctables.h: obj/country localise.ctl localise
-	./localise $(UNIQUEARG) $(MULTIKEYBD) localise.ctl bios/ctables.h localise1.tmp
+bios/ctables.h: obj/country localise.ctl $(TOOLDIR)/localise
+	$(TOOLDIR)/localise $(UNIQUEARG) $(MULTIKEYBD) localise.ctl bios/ctables.h localise1.tmp
 
-include/i18nconf.h: obj/country localise.ctl localise
-	./localise $(UNIQUEARG) $(MULTIKEYBD) localise.ctl localise2.tmp include/i18nconf.h
+include/i18nconf.h: obj/country localise.ctl $(TOOLDIR)/localise
+	$(TOOLDIR)/localise $(UNIQUEARG) $(MULTIKEYBD) localise.ctl localise2.tmp include/i18nconf.h
 
 #
 # NLS support
@@ -940,35 +967,35 @@ include/i18nconf.h: obj/country localise.ctl localise
 POFILES = $(wildcard po/*.po)
 
 GEN_SRC += util/langs.c
-TOCLEAN += bug po/messages.pot
+TOCLEAN += $(TOOLDIR)/bug* po/messages.pot
 
-NODEP += bug
-bug: tools/bug.c
+NODEP += $(TOOLDIR)/bug
+$(TOOLDIR)/bug: tools/bug.c
 	$(NATIVECC) $< -o $@
 
 # even if UNIQUE is specified, we ensure langs.c exists to avoid dependency problems
-util/langs.c: $(POFILES) po/LINGUAS bug po/messages.pot
-	./bug make || { rm -f $@; false; }
+util/langs.c: $(POFILES) po/LINGUAS $(TOOLDIR)/bug po/messages.pot
+	$(TOOLDIR)/bug make || { rm -f $@; false; }
 
-po/messages.pot: bug po/POTFILES.in $(shell grep -v '^#' po/POTFILES.in)
-	./bug xgettext
+po/messages.pot: $(TOOLDIR)/bug po/POTFILES.in $(shell grep -v '^#' po/POTFILES.in)
+	$(TOOLDIR)/bug xgettext
 
 #
 # Resource support
 #
 
-TOCLEAN += erd grd ird mrd draft temp.rsc temp.def
+TOCLEAN += $(TOOLDIR)/erd* $(TOOLDIR)/grd* $(TOOLDIR)/ird* $(TOOLDIR)/mrd* $(TOOLDIR)/draft* temp.rsc temp.def
 
-NODEP += erd grd ird mrd draft
-erd: tools/erd.c
+NODEP += $(TOOLDIR)/erd $(TOOLDIR)/grd $(TOOLDIR)/ird $(TOOLDIR)/mrd $(TOOLDIR)/draft
+$(TOOLDIR)/erd: tools/erd.c
 	$(NATIVECC) $< -o $@
-grd: tools/erd.c
-	$(NATIVECC) -DGEM_RSC $< -o grd
-ird: tools/erd.c
-	$(NATIVECC) -DICON_RSC $< -o ird
-mrd: tools/erd.c
-	$(NATIVECC) -DMFORM_RSC $< -o mrd
-draft: tools/draft.c tools/draftexc.c
+$(TOOLDIR)/grd: tools/erd.c
+	$(NATIVECC) -DGEM_RSC $< -o $@
+$(TOOLDIR)/ird: tools/erd.c
+	$(NATIVECC) -DICON_RSC $< -o $@
+$(TOOLDIR)/mrd: tools/erd.c
+	$(NATIVECC) -DMFORM_RSC $< -o $@
+$(TOOLDIR)/draft: tools/draft.c tools/draftexc.c
 	$(NATIVECC) $(DEFINES) $^ -o $@
 
 DESKRSC_BASE = desk/desktop
@@ -1008,24 +1035,24 @@ GEN_SRC += $(ICONRSCGEN_BASE).c $(ICONRSCGEN_BASE).h $(MFORMRSCGEN_BASE).c $(MFO
 # pattern that matches the file name, and all prerequisites in that rule either
 # exist or can be built."
 
-$(DESKRSCGEN_BASE)%c $(DESKRSCGEN_BASE)%h: draft erd $(DESKRSC_BASE)%rsc $(DESKRSC_BASE)%def
-	./draft $(DESKRSC_BASE) temp
-	./erd $(NOSHAREARG) -pdesk temp $(DESKRSCGEN_BASE)
-$(GEMRSCGEN_BASE)%c $(GEMRSCGEN_BASE)%h: grd $(GEMRSC_BASE)%rsc $(GEMRSC_BASE)%def
-	./grd $(NOSHAREARG) $(GEMRSC_BASE) $(GEMRSCGEN_BASE)
-$(ICONRSCGEN_BASE)%c $(ICONRSCGEN_BASE)%h: ird $(ICONRSC_BASE)%rsc $(ICONRSC_BASE)%def
-	./ird -picon $(ICONRSC_BASE) $(ICONRSCGEN_BASE)
-$(MFORMRSCGEN_BASE)%c $(MFORMRSCGEN_BASE)%h: mrd $(MFORMRSC_BASE)%rsc $(MFORMRSC_BASE)%def
-	./mrd -pmform $(MFORMRSC_BASE) $(MFORMRSCGEN_BASE)
+$(DESKRSCGEN_BASE)%c $(DESKRSCGEN_BASE)%h: $(TOOLDIR)/draft $(TOOLDIR)/erd $(DESKRSC_BASE)%rsc $(DESKRSC_BASE)%def
+	$(TOOLDIR)/draft $(DESKRSC_BASE) temp
+	$(TOOLDIR)/erd $(NOSHAREARG) -pdesk temp $(DESKRSCGEN_BASE)
+$(GEMRSCGEN_BASE)%c $(GEMRSCGEN_BASE)%h: $(TOOLDIR)/grd $(GEMRSC_BASE)%rsc $(GEMRSC_BASE)%def
+	$(TOOLDIR)/grd $(NOSHAREARG) $(GEMRSC_BASE) $(GEMRSCGEN_BASE)
+$(ICONRSCGEN_BASE)%c $(ICONRSCGEN_BASE)%h: $(TOOLDIR)/ird $(ICONRSC_BASE)%rsc $(ICONRSC_BASE)%def
+	$(TOOLDIR)/ird -picon $(ICONRSC_BASE) $(ICONRSCGEN_BASE)
+$(MFORMRSCGEN_BASE)%c $(MFORMRSCGEN_BASE)%h: $(TOOLDIR)/mrd $(MFORMRSC_BASE)%rsc $(MFORMRSC_BASE)%def
+	$(TOOLDIR)/mrd -pmform $(MFORMRSC_BASE) $(MFORMRSCGEN_BASE)
 
 #
 # Special ROM support
 #
 
-TOCLEAN += mkrom
+TOCLEAN += $(TOOLDIR)/mkrom*
 
-NODEP += mkrom
-mkrom: tools/mkrom.c
+NODEP += $(TOOLDIR)/mkrom
+$(TOOLDIR)/mkrom: tools/mkrom.c
 	$(NATIVECC) $< -o $@
 
 # test target to build all tools that can be built by the Makefile
@@ -1157,8 +1184,8 @@ ifneq (,$(UNIQUE))
 ifneq (us,$(ETOSLANG))
 emutos.img: $(TRANS_SRC)
 
-%.tr.c : %.c po/$(ETOSLANG).po bug po/LINGUAS obj/country
-	./bug translate $(ETOSLANG) $<
+%.tr.c : %.c po/$(ETOSLANG).po $(TOOLDIR)/bug po/LINGUAS obj/country
+	$(TOOLDIR)/bug translate $(ETOSLANG) $<
 endif
 else
 emutos.img: $(TRANS_SRC)
@@ -1167,14 +1194,14 @@ emutos.img: $(TRANS_SRC)
 # since we must assign unique msg ids for them
 #
 define TR_TEMPLATE
-$(1).tr.c : $(TRANS_CSRC) po/messages.pot bug po/LINGUAS
+$(1).tr.c : $(TRANS_CSRC) po/messages.pot $(TOOLDIR)/bug po/LINGUAS
 
 endef
 
 $(foreach SRC,$(subst .c,,$(TRANS_CSRC)),$(eval $(call TR_TEMPLATE,$(SRC))))
 
-$(TRANS_SRC): po/messages.pot bug po/LINGUAS
-	./bug translate all $(TRANS_CSRC)
+$(TRANS_SRC): po/messages.pot $(TOOLDIR)/bug po/LINGUAS
+	$(TOOLDIR)/bug translate all $(TRANS_CSRC)
 
 endif
 
@@ -1247,6 +1274,9 @@ obj/%.o : %.c
 
 obj/%.o : %.S
 	$(CC) $(SFILE_FLAGS) -c $< -o $@
+
+obj/%.o : %.vasm
+	$(VASM) $(VASMFLAGS) -o $@ $<
 
 #
 # version string
@@ -1472,7 +1502,7 @@ test:
 #
 
 ALL_UTIL_SRC = $(wildcard util/*.[cS])
-DEP_SRC = $(sort $(SRC) $(ALL_UTIL_SRC))
+DEP_SRC = $(sort $(filter-out %.vasm,$(SRC)) $(ALL_UTIL_SRC))
 
 TOCLEAN += makefile.dep
 NODEP += makefile.dep
