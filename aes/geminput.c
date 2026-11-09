@@ -108,6 +108,49 @@ static WORD chk_ctrl(WORD mx, WORD my)
 
 
 /*
+ *  Return ptr to AESPD that owns the mouse, based on position.  Called
+ *  when button initially goes down, or when the mouse is moved with
+ *  the mouse button down.
+ */
+static AESPD *chkown(void)
+{
+    WORD val;
+
+    val = chk_ctrl(xrat, yrat);
+    if (val == 1)
+        return gl_cowner;
+
+    return (val == -1) ? ctl_pd : D.w_win[0].w_owner;
+}
+
+
+/*
+ *  Check if the process owning the mouse at current position is waiting
+ *  for multiple clicks.
+ */
+static BOOL wants_double_click(void)
+{
+    AESPD *pd;
+    EVB *e;
+
+    if (!gl_bpend)
+        return FALSE;
+
+    pd = gl_ctmown ? ctl_pd : chkown();
+    if (!pd || !pd->p_cda)
+        return FALSE;
+
+    for (e = pd->p_cda->c_bsleep; e; e = e->e_link)
+    {
+        if (LOBYTE(HIWORD(e->e_parm)) > 1)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
+
+/*
  *  Button click code call that is from the button interrupt code
  *  with interrupts off
  */
@@ -132,7 +175,7 @@ void b_click(WORD state)
              * if someone cares about multiple clicks and this is not
              * a null mouse then set up delay else just fork it
              */
-            if (gl_bpend && state)
+            if (state && wants_double_click())
             {
                 /* start click cnt at 1, establish desired state and set wait flag */
                 gl_bclick = 1;
@@ -305,23 +348,6 @@ void post_keybd(CDA *c, UWORD ch)
         evremove(e, ch);
     else    /* no one is waiting, just toss it in the buffer */
         nq(ch, &c->c_q);
-}
-
-
-/*
- *  Return ptr to AESPD that owns the mouse, based on position.  Called
- *  when button initially goes down, or when the mouse is moved with
- *  the mouse button down.
- */
-static AESPD *chkown(void)
-{
-    WORD val;
-
-    val = chk_ctrl(xrat, yrat);
-    if (val == 1)
-        return gl_cowner;
-
-    return (val == -1) ? ctl_pd : D.w_win[0].w_owner;
 }
 
 
