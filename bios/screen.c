@@ -521,20 +521,6 @@ void screen_init_mode(void)
         setphys((const UBYTE *)0x10000L);
 #endif
 
-        /* Reset horizontal scroll, line offset, and SAGA modulo on boot/warm reset */
-        *(volatile UBYTE *)STE_LINE_OFFSET = 0;
-        *(volatile UBYTE *)STE_HORZ_SCROLL = 0;
-        *(volatile UWORD *)0xFFFF820EL = 0;
-        *(volatile UWORD *)0xFFFF8210L = 0;
-        *(volatile UWORD *)0xFFFF8266L = 0;
-#if CONF_WITH_APOLLO_V4
-        *(volatile UWORD *)0x00FFFEE6UL = 0; /* SAGA video modulo */
-        *(volatile UWORD *)0x00FFFEE0UL = 0; /* SAGA PIP modulo */
-        *(volatile UWORD *)0x00FFFEDCUL = 0; /* SAGA PIP video mode disable */
-        *(volatile UWORD *)0x00FFFED0UL = 0x3FFF;
-        *(volatile UWORD *)0x00FFFED2UL = 0x3FFF;
-#endif
-
 #if CONF_WITH_NVRAM && !defined(MACHINE_FIREBEE) && !CONF_WITH_APOLLO_V4
         /* This is currently disabled on the FireBee, because the VIDEL is
          * unreliable. Some video modes are not displayed well.
@@ -553,6 +539,7 @@ void screen_init_mode(void)
 
         /* try to ensure it corresponds to monitor */
         current_video_mode = boot_resolution;       /* needed by vfixmode() */
+#if !CONF_WITH_APOLLO_V4
         boot_resolution = vfixmode(boot_resolution);
         if (!lookup_videl_mode(boot_resolution)) {  /* mode isn't in table */
             KDEBUG(("Invalid video mode 0x%04x changed to 0x%04x\n",
@@ -565,6 +552,7 @@ void screen_init_mode(void)
                     boot_resolution,FALCON_DEFAULT_BOOT));
             boot_resolution = FALCON_DEFAULT_BOOT;  /* so use default */
         }
+#endif
 
         /* vsetmode() now uses vfixmode() to adjust the video mode
          * according to the actual monitor
