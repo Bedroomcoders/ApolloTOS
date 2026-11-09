@@ -881,6 +881,9 @@
 # ifndef ALWAYS_SHOW_INITINFO
 #  define ALWAYS_SHOW_INITINFO 1
 # endif
+# ifndef USE_STOP_INSN_TO_FREE_HOST_CPU
+#  define USE_STOP_INSN_TO_FREE_HOST_CPU 0
+# endif
 #endif
 
 /*

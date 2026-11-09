@@ -36,6 +36,7 @@
 #include "bdosbind.h"
 #include "amiga.h"
 #include "lisa.h"
+#include "string.h"
 #include "nova.h"
 
 void detect_monitor_change(void);
@@ -521,6 +522,20 @@ void screen_init_mode(void)
         setphys((const UBYTE *)0x10000L);
 #endif
 
+        *(volatile UBYTE *)STE_LINE_OFFSET = 0;
+        *(volatile UBYTE *)STE_HORZ_SCROLL = 0;
+        *(volatile UWORD *)0xffff820eL = 0;
+#if CONF_WITH_APOLLO_V4
+        *(volatile UWORD *)0x00FFFEE6UL = 0; /* SAGA video modulo */
+        *(volatile UWORD *)0x00FFFEE0UL = 0; /* SAGA PIP modulo */
+        *(volatile UWORD *)0x00FFFEDCUL = 0; /* SAGA PIP video mode disable */
+        *(volatile ULONG *)0x00FFFED8UL = 0; /* SAGA PIP framebuffer pointer disable */
+        *(volatile UWORD *)0x00FFFED0UL = 0x3FFF; /* SAGA PIP offscreen */
+        *(volatile UWORD *)0x00FFFED2UL = 0x3FFF;
+        *(volatile UWORD *)0x00FFFED4UL = 0x3FFF;
+        *(volatile UWORD *)0x00FFFED6UL = 0x3FFF;
+#endif
+
 #if CONF_WITH_NVRAM && !defined(MACHINE_FIREBEE) && !CONF_WITH_APOLLO_V4
         /* This is currently disabled on the FireBee, because the VIDEL is
          * unreliable. Some video modes are not displayed well.
@@ -667,6 +682,12 @@ void screen_init_address(void)
     KDEBUG(("v_bas_ad = %p, vram_size = %lu\n", v_bas_ad, vram_size));
     /* correct physical address */
     setphys(screen_start);
+
+#if CONF_WITH_APOLLO_V4
+    /* Cleanly erase the allocated video buffer so that on warm reboot (Ctrl+Amiga+Amiga)
+     * no remnants of previous GEM desktop, windows, or artifacts remain in the display buffer. */
+    bzero(screen_start, 0x00096000UL);
+#endif
 }
 
 /*

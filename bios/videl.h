@@ -53,7 +53,11 @@
 #define FALCON_ST_MEDIUM    (VIDEL_COMPAT|VIDEL_80COL|VIDEL_2BPP)
 #define FALCON_ST_LOW       (VIDEL_COMPAT|VIDEL_4BPP)
 
-#define FALCON_DEFAULT_BOOT (VIDEL_VERTICAL|VIDEL_80COL|VIDEL_4BPP) /* 640x480x16 colours, TV, NTSC */
+#if CONF_WITH_APOLLO_V4
+# define FALCON_DEFAULT_BOOT (VIDEL_VGA|VIDEL_80COL|VIDEL_4BPP) /* 640x480x16 colours, VGA */
+#else
+# define FALCON_DEFAULT_BOOT (VIDEL_VERTICAL|VIDEL_80COL|VIDEL_4BPP) /* 640x480x16 colours, TV, NTSC */
+#endif
 
 typedef struct {
     WORD vmode;         /* video mode (-1 => end marker) */

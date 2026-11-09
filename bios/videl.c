@@ -322,6 +322,9 @@ static const VMODE_ENTRY other_init_table[] = {
 #define SAGA_VIDEO_PLANE_PTR    (*(volatile const UBYTE **)0x00FFFEECUL)
 #define SAGA_VIDEO_MODE         (*(volatile UWORD *)0x00FFFEF4UL)
 #define STE_LINE_OFFSET         (*(volatile UBYTE *)0xFFFF820FUL)
+#define STE_HORZ_SCROLL         (*(volatile UBYTE *)0xFFFF8265UL)
+#define FALCON_LINE_OFFSET      (*(volatile UWORD *)0xFFFF820EUL)
+#define FALCON_SPSHIFT          (*(volatile UWORD *)0xFFFF8266UL)
 
 static const UWORD saga_vga_res_table[8] = {
     0x0100, /* 0: TV 40col non-interlace (320x200) */
@@ -491,6 +494,9 @@ WORD vsetmode(WORD mode)
     current_video_mode = mode;
     SAGA_VIDEO_MODULO = 0;
     STE_LINE_OFFSET = 0;
+    STE_HORZ_SCROLL = 0;
+    FALCON_LINE_OFFSET = 0;
+    FALCON_SPSHIFT = 0;
 
     if ((UWORD)mode & 0x4000)
     {
@@ -1429,17 +1435,27 @@ void initialise_falcon_palette(WORD mode)
      * set up the STe palette, we update it here for compatibility with
      * Atari TOS.  this results in changes to registers 8-14 inclusive
      */
+#if CONF_WITH_APOLLO_V4
+    convert2ste(ste_shadow_palette,falcon_shadow_palette);
+    for (i = 0; i < 16; i++)
+        col_regs[i] = ste_shadow_palette[i];
+#else
     if (use_ste_palette(mode)) {
         convert2ste(ste_shadow_palette,falcon_shadow_palette);
         for (i = 0; i < 16; i++)
             col_regs[i] = ste_shadow_palette[i];
     }
+#endif
 
 #if CONF_WITH_APOLLO_V4
     v4_pip_width = 320;
     v4_pip_height = 200;
     SAGA_PIP_X_START = 0x3FFF;
     SAGA_PIP_Y_START = 0x3FFF;
+    SAGA_PIP_X_END = 0x3FFF;
+    SAGA_PIP_Y_END = 0x3FFF;
+    SAGA_PIP_FB_BPL = 0;
+    SAGA_PIP_VIDEO_MODE = 0;
 #endif
 }
 
