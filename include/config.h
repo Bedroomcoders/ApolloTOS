@@ -878,6 +878,9 @@
 # ifndef CONF_WITH_DIP_SWITCHES
 #  define CONF_WITH_DIP_SWITCHES 0
 # endif
+# ifndef ALWAYS_SHOW_INITINFO
+#  define ALWAYS_SHOW_INITINFO 1
+# endif
 #endif
 
 /*
