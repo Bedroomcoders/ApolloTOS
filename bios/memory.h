@@ -31,6 +31,10 @@
 
 #ifndef ASM_SOURCE
 
+#if CONF_WITH_APOLLO_V4
+ULONG v4_detect_phys_ram_top(void);
+#endif
+
 void ttram_detect(void);
 
 #if CONF_WITH_ALT_RAM

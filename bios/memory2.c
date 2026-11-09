@@ -25,17 +25,62 @@
 #include "../bdos/bdosstub.h"
 #include "amiga.h"
 #include "string.h"
+#include "videl.h"
 
 #define ZONECOUNT   32      /* for memory test */
 
 UBYTE meminit_flags;
+
+#if CONF_WITH_APOLLO_V4
+
+/*
+ * Detect top of physical FastRAM on Apollo V4 (512 MB, 1 GB, or 2 GB)
+ * using mirror probes at 4 MB, 516 MB, and 1028 MB.
+ */
+ULONG v4_detect_phys_ram_top(void)
+{
+    volatile ULONG *p0 = (volatile ULONG *)0x00400000UL;
+    volatile ULONG *p1 = (volatile ULONG *)0x20400000UL;
+    volatile ULONG *p2 = (volatile ULONG *)0x40400000UL;
+    ULONG save0 = *p0;
+    ULONG save1 = *p1;
+    ULONG save2 = *p2;
+    ULONG top;
+
+    *p0 = 0x12345678UL;
+    *p1 = 0x87654321UL;
+    *p2 = 0xABCDEF01UL;
+    asm volatile ("nop" : : : "memory");
+
+    if (*p0 == 0x12345678UL)
+    {
+        if (*p1 == 0x87654321UL)
+            top = 0x80000000UL; /* 2048 MB */
+        else
+            top = 0x40000000UL; /* 1024 MB */
+    }
+    else
+    {
+        top = 0x20000000UL;     /* 512 MB */
+    }
+
+    *p2 = save2;
+    *p1 = save1;
+    *p0 = save0;
+    return top;
+}
+
+#endif /* CONF_WITH_APOLLO_V4 */
 
 #if CONF_WITH_TTRAM
 
 /* Detect hardware TT-RAM size */
 static ULONG detect_ttram_size(void)
 {
-#if CONF_TTRAM_SIZE
+#if CONF_WITH_APOLLO_V4
+    ULONG top = (v4_detect_phys_ram_top() - v4_reserved_vram_size()) & 0xFFF00000UL;
+    return top - (ULONG)TTRAM_START;
+#elif CONF_TTRAM_SIZE
     /* Fixed-size TT-RAM */
     return CONF_TTRAM_SIZE;
 #else
