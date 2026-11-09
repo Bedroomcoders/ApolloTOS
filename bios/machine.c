@@ -134,6 +134,10 @@ static void detect_video(void)
 #endif
 
 #if CONF_WITH_VIDEL
+#if CONF_WITH_APOLLO_V4
+    /* On Apollo V4 Atari core, SAGA video is always present when STE shifter reg responds */
+    has_videl = has_ste_shifter ? 1 : 0;
+#else
     /* test if we have Falcon VIDEL by testing for f030_xreg */
     has_videl = 0;
     if (check_read_byte(FALCON_HHT))
@@ -158,6 +162,7 @@ static void detect_video(void)
         volatile UBYTE *fbcr = (UBYTE *)FALCON_BUS_CTL;
         *fbcr |= 0x25;  /* set STe Bus emulation off, 16MHz blitter & CPU */
     }
+#endif
 #endif
 }
 
@@ -732,6 +737,7 @@ void fill_cookie_jar(void)
      * number currently undefined.
      */
 
+#if !CONF_WITH_APOLLO_V4
     /* _AKP  This cookie indicates the presence of an Advanced Keyboard
      * Processor. The high word of this cookie is currently reserved.
      * The low word indicates the language currently used by TOS for
@@ -759,6 +765,7 @@ void fill_cookie_jar(void)
     detect_idt();
     KDEBUG(("cookie_idt = 0x%08lx\n", cookie_idt));
     cookie_add(COOKIE_IDT, cookie_idt);
+#endif
 
 #if CONF_WITH_FDC
     /* Floppy Drive Controller
@@ -796,6 +803,23 @@ void fill_cookie_jar(void)
     cookie_add(COOKIE__5MS, (ULONG)&vector_5ms);
 #endif
 }
+
+#if CONF_WITH_APOLLO_V4
+/*
+ * On Apollo V4 Atari core, NVRAM is backed by a file on drive C:, so
+ * _AKP and _IDT cookies are populated right after blkdev_boot() mounts C:.
+ */
+void fill_cookie_jar_nvram(void)
+{
+    detect_akp();
+    KDEBUG(("cookie_akp = 0x%08lx\n", cookie_akp));
+    cookie_add(COOKIE_AKP, cookie_akp);
+
+    detect_idt();
+    KDEBUG(("cookie_idt = 0x%08lx\n", cookie_idt));
+    cookie_add(COOKIE_IDT, cookie_idt);
+}
+#endif
 
 static const char * guess_machine_name(void)
 {

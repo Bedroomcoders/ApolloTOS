@@ -98,6 +98,9 @@ void machine_init(void);
 
 /* fill the cookie jar */
 void fill_cookie_jar(void);
+#if CONF_WITH_APOLLO_V4
+void fill_cookie_jar_nvram(void);
+#endif
 
 /* print the name of the machine */
 const char * machine_name(void);

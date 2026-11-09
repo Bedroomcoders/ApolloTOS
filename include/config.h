@@ -806,6 +806,81 @@
 #endif
 
 /*
+ * Defaults for the Apollo V4 Standalone (V4SA) Atari core target (ApolloTOS)
+ */
+#ifdef MACHINE_APOLLO_V4
+# ifndef CONF_WITH_APOLLO_V4
+#  define CONF_WITH_APOLLO_V4 1
+# endif
+# ifndef CONF_WITH_APOLLO_68080
+#  define CONF_WITH_APOLLO_68080 1
+# endif
+# ifndef CONF_WITH_VAMPIRE_SPI
+#  define CONF_WITH_VAMPIRE_SPI 1
+# endif
+# ifndef CONF_WITH_SDMMC
+#  define CONF_WITH_SDMMC 1
+# endif
+# ifndef CONF_WITH_FALCON_MMU
+#  define CONF_WITH_FALCON_MMU 0
+# endif
+# ifndef CONF_WITH_TT_MMU
+#  define CONF_WITH_TT_MMU 0
+# endif
+# ifndef CONF_WITH_TT_SHIFTER
+#  define CONF_WITH_TT_SHIFTER 0
+# endif
+# ifndef CONF_WITH_TT_MFP
+#  define CONF_WITH_TT_MFP 0
+# endif
+# ifndef CONF_WITH_SCC
+#  define CONF_WITH_SCC 0
+# endif
+# ifndef CONF_WITH_MONSTER
+#  define CONF_WITH_MONSTER 0
+# endif
+# ifndef CONF_WITH_MAGNUM
+#  define CONF_WITH_MAGNUM 0
+# endif
+# ifndef CONF_WITH_NOVA
+#  define CONF_WITH_NOVA 0
+# endif
+# ifndef CONF_WITH_BLITTER
+#  define CONF_WITH_BLITTER 0
+# endif
+# ifndef CONF_WITH_SFP004
+#  define CONF_WITH_SFP004 0
+# endif
+# ifndef CONF_WITH_DSP
+#  define CONF_WITH_DSP 0
+# endif
+# ifndef CONF_WITH_ACSI
+#  define CONF_WITH_ACSI 0
+# endif
+# ifndef CONF_WITH_SCSI
+#  define CONF_WITH_SCSI 0
+# endif
+# ifndef CONF_WITH_CARTRIDGE
+#  define CONF_WITH_CARTRIDGE 0
+# endif
+# ifndef CONF_WITH_VME
+#  define CONF_WITH_VME 0
+# endif
+# ifndef CONF_WITH_PRINTER_PORT
+#  define CONF_WITH_PRINTER_PORT 0
+# endif
+# ifndef CONF_WITH_MEGARTC
+#  define CONF_WITH_MEGARTC 0
+# endif
+# ifndef CONF_WITH_ICDRTC
+#  define CONF_WITH_ICDRTC 0
+# endif
+# ifndef CONF_WITH_DIP_SWITCHES
+#  define CONF_WITH_DIP_SWITCHES 0
+# endif
+#endif
+
+/*
  * Set DIAGNOSTIC_CARTRIDGE to 1 when building a diagnostic cartridge
  */
 #ifndef DIAGNOSTIC_CARTRIDGE
@@ -845,6 +920,15 @@
 # else
 #  define CONF_WITH_APOLLO_68080 1
 # endif
+#endif
+
+/*
+ * Set CONF_WITH_APOLLO_V4 to 1 to enable support for Apollo V4 Atari core
+ * hardware (SAGA video, FastRAM $01000000+, V4 SPI SD at $00FFFE00,
+ * V4 Gayle/FastIDE at $00F00000, file-backed NVRAM on C:).
+ */
+#ifndef CONF_WITH_APOLLO_V4
+# define CONF_WITH_APOLLO_V4 0
 #endif
 
 /*
