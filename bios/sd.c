@@ -72,8 +72,8 @@
                             /* a useful macro */
 #define msec_to_ticks(msec)     ((msec*CLOCKS_PER_SEC+999)/1000)
                             /* these are byte-count timeout values */
-#define SD_CMD_TIMEOUT          8       /* between sending crc & receiving response */
-#define SD_CSD_TIMEOUT          8       /* between sending SEND_CSD cmd & receiving data */
+#define SD_CMD_TIMEOUT          64      /* between sending crc & receiving response */
+#define SD_CSD_TIMEOUT          2500    /* between sending SEND_CSD cmd & receiving data */
                             /* these are millisecond timeout values (see SD specifications v4.10) */
 #define SD_POWERUP_DELAY_MSEC   1       /* minimum power-up time */
 #define SD_INIT_TIMEOUT_MSEC    1000    /* waiting for card to become ready */
@@ -511,8 +511,10 @@ static int sd_command(UBYTE cmd,ULONG argument,UBYTE crc,UBYTE resp_type,UBYTE *
      *  2. it cleans up any residual data that the card may be sending as
      *     a result of a previous command that experienced problems.
      */
-    if (sd_wait_for_ready(SD_READ_TIMEOUT_TICKS) < 0)
-        return -1;
+    if (cmd != CMD12) {
+        if (sd_wait_for_ready(SD_READ_TIMEOUT_TICKS) < 0)
+            return -1;
+    }
 
     /* Send the command byte, argument, crc */
     spi_send_byte((cmd & 0x3f) | 0x40);
@@ -575,14 +577,9 @@ LONG i;
 UBYTE token;
 
     /* wait for the token */
-    if (special) {
-        for (i = 0; i < SD_CSD_TIMEOUT; i++) {
-            token = spi_recv_byte();
-            if (token != 0xff)
-                break;
-        }
-    } else {
+    {
         ULONG end = hz_200 + SD_READ_TIMEOUT_TICKS;
+        MAYBE_UNUSED(special);
         while(hz_200 < end) {
             token = spi_recv_byte();
             if (token != 0xff)
@@ -723,23 +720,13 @@ static void sd_features(struct cardinfo *info)
     }
 
     /*
-     *  all SD cards support multiple block I/O
+     *  Use single-block CMD17/CMD24 transfers rather than CMD18/CMD12
+     *  multi-block transfers: on fast 25 MHz SPI (Apollo V4), the SD card
+     *  immediately starts streaming sector (count+1) on MISO after sector
+     *  count's CRC, which collides with CMD12's R1 response byte and causes
+     *  sd_rw() to abort with EREADF (-11).
      */
-    if (info->type == CARDTYPE_SD) {
-        info->features |= MULTIBLOCK_IO;
-        return;
-    }
-
-    /*
-     *  check MMC for multiple block I/O support
-     *  v3 cards always have it ... but so do some v2 & v1 cards
-     */
-    if (info->type == CARDTYPE_MMC) {
-        if (info->version == 3)
-            info->features |= MULTIBLOCK_IO;
-        else if (sd_mbtest() == 0)
-            info->features |= MULTIBLOCK_IO;
-    }
+    MAYBE_UNUSED(sd_mbtest);
 }
 
 /*

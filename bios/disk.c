@@ -422,6 +422,8 @@ LONG disk_mediach(UWORD unit)
 
     if (ret == MEDIACHANGE)
         disk_rescan(unit);
+    else if (ret == MEDIANOCHANGE)
+        units[unit].last_access = hz_200;
 
     KDEBUG(("disk_mediach(%d) returned %ld\n",unit,ret));
     return ret;

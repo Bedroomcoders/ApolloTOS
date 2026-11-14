@@ -608,6 +608,9 @@ LONG blkdev_getbpb(WORD dev)
     if ((unit >= NUMFLOPPIES) && (units[unit].features & UNIT_REMOVABLE))
         disk_mediach(unit);     /* check for change & rescan partitions if so */
 
+    bdev->mediachange = MEDIANOCHANGE;      /* reset after any disk_mediach() rescan */
+    bdev->forcechange = FALSE;
+
     /* check if this device supports GetBPB() */
     if (!(bdev->flags & GETBPB_ALLOWED))
     {
