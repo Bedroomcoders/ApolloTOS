@@ -38,6 +38,10 @@
 #include "conout.h"
 #include "../bdos/bdosstub.h"
 #include "lineavars.h"
+#if CONF_WITH_APOLLO_V4
+#include "screen.h"
+#include "apollologo.h"
+#endif
 
 /* Screen width, in characters, as signed value */
 #define SCREEN_WIDTH ((WORD)v_cel_mx + 1)
@@ -51,6 +55,7 @@
 #define LOGO_LENGTH 34      /* must equal length of strings in EmuTOS logo */
 
 #if CONF_WITH_APOLLO_V4
+/* Fallback ASCII block logo if mode is not 4bpp >= 480x120 */
 static const char logo[][LOGO_LENGTH+1] =
     { " 1  111  11 1  1  11   777 777 777",
       "1 1 1  1 1 1 1  1 1  1  7  7 7 7  ",
@@ -167,12 +172,20 @@ static void pair_start(const char *left)
     cprintf(": ");
     while(n++ < INFO_LENGTH/2)
         cprintf(" ");
+#if CONF_WITH_APOLLO_V4
+    cprintf("\033b\"");         /* logo palette index 2 = Atari Red */
+#else
     cprintf("\033b!");
+#endif
 }
 
 static void pair_end(void)
 {
+#if CONF_WITH_APOLLO_V4
+    cprintf("\033b!\r\n");      /* logo palette index 1 = Black */
+#else
     cprintf("\033b/ \r\n");
+#endif
 }
 
 /*
@@ -268,6 +281,47 @@ static void cprintf_bytesize(ULONG bytes)
     cprintf("%lu %s", value, unit);
 }
 
+#if CONF_WITH_APOLLO_V4
+/*
+ * Blit 480x120 4bpp planar ApolloTOS logo centered at top_row.
+ * Returns TRUE if bitmap was drawn, FALSE to fall back to VT52 art.
+ */
+static BOOL draw_apollo_logo(WORD top_row)
+{
+    const UWORD *src;
+    UBYTE *dst_row;
+    WORD x_word_group, y_px;
+    WORD y, w;
+    WORD words_per_line = (APOLLOLOGO_WIDTH / 16) * APOLLOLOGO_PLANES;
+
+    if (v_planes != APOLLOLOGO_PLANES ||
+        V_REZ_HZ < APOLLOLOGO_WIDTH ||
+        V_REZ_VT < APOLLOLOGO_HEIGHT)
+        return FALSE;
+
+    VsetRGB(0, 16, (LONG)apollologo_palette);
+    vsync();
+
+    x_word_group = ((V_REZ_HZ - APOLLOLOGO_WIDTH) / 2) / 16;
+    y_px = top_row * v_cel_ht;
+    if (y_px + APOLLOLOGO_HEIGHT > V_REZ_VT)
+        y_px = 0;
+
+    src = apollologo_data;
+    dst_row = (UBYTE *)v_bas_ad + (ULONG)y_px * (ULONG)v_lin_wr +
+              (ULONG)x_word_group * (APOLLOLOGO_PLANES * sizeof(UWORD));
+
+    for (y = 0; y < APOLLOLOGO_HEIGHT; y++) {
+        UWORD *dst = (UWORD *)dst_row;
+        for (w = 0; w < words_per_line; w++)
+            *dst++ = *src++;
+        dst_row += v_lin_wr;
+    }
+
+    return TRUE;
+}
+#endif
+
 /*
  * initinfo - Show initial configuration at startup
  *
@@ -278,6 +332,10 @@ WORD initinfo(ULONG *pshiftbits)
     int screen_height = v_cel_my + 1;
     int initinfo_height = 19; /* Define ENABLE_KDEBUG to guess correct value */
     int top_margin;
+#if CONF_WITH_APOLLO_V4
+    BOOL drew_bitmap_logo = FALSE;
+    int logo_rows = (APOLLOLOGO_HEIGHT + v_cel_ht - 1) / v_cel_ht;
+#endif
 #ifdef ENABLE_KDEBUG
     int actual_initinfo_height;
 #endif
@@ -292,6 +350,11 @@ WORD initinfo(ULONG *pshiftbits)
 
     /* clear startup message */
     cprintf("\033E");
+
+#if CONF_WITH_APOLLO_V4
+    /* Bitmap logo (120px = 8 rows) replaces 5-row ASCII art (+3 rows) */
+    initinfo_height += (logo_rows - ARRAY_SIZE(logo));
+#endif
 
     /*
      * If additional info lines are going to be printed in specific cases,
@@ -309,17 +372,29 @@ WORD initinfo(ULONG *pshiftbits)
 
     /* Center the initinfo screen vertically */
     top_margin = (screen_height - initinfo_height) / 2;
+    if (top_margin < 0)
+        top_margin = 0;
     KDEBUG(("screen_height = %d, initinfo_height = %d, top_margin = %d\n",
         screen_height, initinfo_height, top_margin));
-    for (i = 0; i < top_margin; i++)
-        cprintf("\r\n");
 
-    /* Centre the logo horizontally */
-    left_margin = (SCREEN_WIDTH-LOGO_LENGTH) / 2;
+#if CONF_WITH_APOLLO_V4
+    drew_bitmap_logo = draw_apollo_logo(top_margin);
+    if (drew_bitmap_logo) {
+        cprintf("\033b!");         /* normal text = palette index 1 (Black) */
+        cprintf("\033Y%c%c", 32 + top_margin + logo_rows, 32);
+    } else
+#endif
+    {
+        for (i = 0; i < top_margin; i++)
+            cprintf("\r\n");
 
-    /* Now print the EmuTOS Logo */
-    for (i = 0; i < ARRAY_SIZE(logo); i++)
-        print_art(logo[i]);
+        /* Centre the logo horizontally */
+        left_margin = (SCREEN_WIDTH-LOGO_LENGTH) / 2;
+
+        /* Now print the EmuTOS Logo */
+        for (i = 0; i < ARRAY_SIZE(logo); i++)
+            print_art(logo[i]);
+    }
 
     /* adjust margins for remaining messages to allow more space for translations */
     left_margin = (SCREEN_WIDTH-INFO_LENGTH) / 2;
@@ -463,6 +538,14 @@ WORD initinfo(ULONG *pshiftbits)
     cprintf("\r\n\r\n");
 #else
     cprintf("\033k\033E");
+#endif
+
+#if CONF_WITH_APOLLO_V4
+    if (drew_bitmap_logo) {
+        initialise_palette_registers(sshiftmod, VsetMode(-1));
+        vsync();
+        cprintf("\033b/");
+    }
 #endif
 
     *pshiftbits = shiftbits;
