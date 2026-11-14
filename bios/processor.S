@@ -180,7 +180,14 @@ _detect_fpu:
 #endif
 
         cmpi.w  #60,d1          // enable FPU on 68060 before the check
+#if CONF_WITH_APOLLO_68080
+        jeq     en_fpu_pcr
+        tst.w   _is_apollo_68080
+        jeq     no60
+en_fpu_pcr:
+#else
         jmi     no60
+#endif
 
         MOVEC_PCR_D2            // get revision number etc
         swap    d2
@@ -309,6 +316,12 @@ m68ec030:
 
 pi_chk040:
         move.l  #0x80008000,d1  // set 040 CACR value: DE and IE
+#if CONF_WITH_APOLLO_68080
+        tst.w   _is_apollo_68080
+        jeq     pi_not080
+        move.l  #0x80c08000,d1  // set 080 CACR value: EDC, EBC/CABC and EIC
+pi_not080:
+#endif
         cmpi.b  #40,_mcpu+3
         jeq     m68040
         move.l  #0x80c08000,d1  // set 060 CACR value: EDC, EBC/CABC and EIC
@@ -350,7 +363,7 @@ m68060:
         MOVEC_D0_DTT1           // and DTTR1
 
         nop
-        CINVA_BC                // invalidate the caches
+        CPUSHA_BC               // push dirty DCache lines and invalidate both caches
         nop
         move.l  d1,d0           // recover the enable value
 

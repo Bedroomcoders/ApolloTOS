@@ -583,12 +583,11 @@ NODEP += 512
 .PHONY: apollotos v4atari
 NODEP += apollotos v4atari
 apollotos v4atari: UNIQUE = $(COUNTRY)
-apollotos v4atari: CPUFLAGS = -m68040
 apollotos v4atari: override DEF += -DTARGET_512 -DMACHINE_APOLLO_V4
 apollotos v4atari: ROMSIZE = 512
 apollotos v4atari:
 	@echo "# Building ApolloTOS 512kB V4 Atari image into $(ROM_PADDED)"
-	$(MAKE) CPUFLAGS='$(CPUFLAGS)' DEF='$(DEF)' OPTFLAGS='$(OPTFLAGS)' UNIQUE=$(UNIQUE) MULTIKEYBD='-k' ROMSIZE=$(ROMSIZE) ROM_PADDED=$(ROM_PADDED) $(ROM_PADDED) REF_OS=TOS404
+	$(MAKE) DEF='$(DEF)' OPTFLAGS='$(OPTFLAGS)' UNIQUE=$(UNIQUE) MULTIKEYBD='-k' ROMSIZE=$(ROMSIZE) ROM_PADDED=$(ROM_PADDED) $(ROM_PADDED) REF_OS=TOS404
 	@printf "$(LOCALCONFINFO)"
 
 #

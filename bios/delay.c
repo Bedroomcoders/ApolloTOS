@@ -98,6 +98,10 @@ void init_delay(void)
  */
 void calibrate_delay(void)
 {
+#if CONF_WITH_APOLLO_68080
+    if (is_apollo_68080)
+        return;
+#endif
 #if CONF_WITH_MFP
     ULONG loopcount, intcount;
 

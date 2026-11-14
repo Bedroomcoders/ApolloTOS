@@ -467,7 +467,16 @@ nodiag:
  */
 #if !defined(__mcoldfire__) && !defined(MACHINE_LISA)
         move.l  #cache_done,0x10   // must be 68000 if we get illegal instrn error
+#if CONF_WITH_APOLLO_V4
+        move.w  #0xb00b,0x00fffefe // unlock V4 ROM shadow RAM before flushing dirty DCache lines
+        nop
+        CPUSHA_BC                  // push dirty DCache lines & invalidate both caches
+        nop
+        move.w  0x0001.w,0x00fffefe // re-lock V4 ROM shadow RAM
+        move.l  #0x00400808,d0     // clear branch cache & disable caches on 68020-68080
+#else
         move.l  #0x00000808,d0     // clear & disable instruction/data caches on
+#endif
         MOVEC_D0_CACR              //  68020-60 (even though bit usage differs!)
 cache_done:
 #endif

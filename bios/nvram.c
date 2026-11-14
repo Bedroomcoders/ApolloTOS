@@ -17,6 +17,7 @@
 #include "machine.h"
 #include "vectors.h"
 #include "nvram.h"
+#include "bios.h"
 #include "biosmem.h"
 #include "bdosbind.h"
 #include "string.h"
@@ -123,6 +124,9 @@ static void write_nvram_file(void)
 {
     LONG fh;
 
+    if (!(boot_status & DOS_AVAILABLE))
+        return;
+
     fh = Fopen(nvram_path_1, 1);
     if (fh < 0)
         fh = Fopen(nvram_path_2, 1);
@@ -146,27 +150,30 @@ static void load_or_init_nvram(void)
     if (nvram_loaded)
         return;
 
-    fh = Fopen(nvram_path_1, 0);
-    if (fh < 0)
-        fh = Fopen(nvram_path_2, 0);
-
-    if (fh >= 0)
+    if (boot_status & DOS_AVAILABLE)
     {
-        nread = Fread((WORD)fh, NVRAM_SIZE, nvram_buf);
-        Fclose((WORD)fh);
+        fh = Fopen(nvram_path_1, 0);
+        if (fh < 0)
+            fh = Fopen(nvram_path_2, 0);
 
-        if ((nread == NVRAM_SIZE) && (compute_sum() == get_sum()))
+        if (fh >= 0)
         {
-            nvram_loaded = TRUE;
-            return;
+            nread = Fread((WORD)fh, NVRAM_SIZE, nvram_buf);
+            Fclose((WORD)fh);
+
+            if ((nread == NVRAM_SIZE) && (compute_sum() == get_sum()))
+            {
+                nvram_loaded = TRUE;
+                return;
+            }
         }
+
+        nvram_loaded = TRUE;
     }
 
     memset(nvram_buf, 0, NVRAM_USER_SIZE);
     memcpy(&nvram_buf[NVRAM_INIT_START], nvram_init, ARRAY_SIZE(nvram_init));
     set_sum(compute_sum());
-    nvram_loaded = TRUE;
-    write_nvram_file();
 }
 
 WORD nvmaccess(WORD type, WORD start, WORD count, UBYTE *buffer)

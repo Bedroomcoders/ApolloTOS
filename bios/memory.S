@@ -551,6 +551,14 @@ memconf_done:
  * a3.l = old _ramtop (#if CONF_WITH_TTRAM)
  */
 stram_detected:
+        // Clear the supervisor stack area (_stkbot to _stktop)
+        lea     _stkbot, a0
+        lea     _stktop, a1
+.clr_stk:
+        clr.l   (a0)+
+        cmpa.l  a0, a1
+        jne     .clr_stk
+
         // The previous temporary stack pointer may have moved
         // during early detections, so we reinitialize it now.
         // After that, normal stack usage is allowed.
