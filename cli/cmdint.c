@@ -535,7 +535,7 @@ LONG rc;
             if (getyn() != 'y')
                 continue;
         }
-        rc = Fdelete(*argv);
+        rc = Fdelete(dta->d_fname);
         if (rc < 0L) {
             if (rc == EACCDN)
                 rc = CANT_DELETE;
@@ -1052,7 +1052,7 @@ WORD drive;
 
     strupper(filespec);
 
-    for (q = p; (*q != PATHSEP) && (q >= filespec); q--)
+    for (q = p; (q >= filespec) && (*q != PATHSEP); q--)
         if (*q == '*')  /* wildcard, no more tweaks */
             return;
 
