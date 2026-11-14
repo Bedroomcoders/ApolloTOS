@@ -19,9 +19,9 @@
 # the following values are stored in the ApolloTOS 'extended os header',
 # and are used to create the VERSION string for official releases.
 #
-MAJOR_VERSION = 1
-MINOR_VERSION = 0
-FIX_VERSION = 0
+MAJOR_VERSION = 0
+MINOR_VERSION = 9
+FIX_VERSION = 1
 
 empty =
 space = $(empty) $(empty)
@@ -35,7 +35,7 @@ endif
 # this is the version string displayed on the welcome screen, and in
 # EmuDesk's 'About' dialog.
 #
-VERSION = 1.0.0-ApolloTOS
+VERSION = v0.91 - $(shell date +%Y-%m-%d)
 
 #
 # this is stored in the OS 'extended os header'.  a zero value
