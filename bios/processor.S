@@ -28,6 +28,10 @@
         .globl  _fputype
 #if CONF_WITH_APOLLO_68080
         .globl  _is_apollo_68080
+#if CONF_WITH_VAMPIRE_SPI
+        .globl  _apollo_spi_icache_enter
+        .globl  _apollo_spi_icache_leave
+#endif
 #endif
 #if CONF_WITH_CACHE_CONTROL || CONF_WITH_NOVA
         .globl  _cache_exists
@@ -636,6 +640,49 @@ _get_cache:
         sne     d0                  // cache as enabled if any of the mask bits are set
         ext.w   d0
 gc_exit:
+        rts
+#endif
+
+#if CONF_WITH_VAMPIRE_SPI && CONF_WITH_APOLLO_68080
+/*
+ * Ensure 68080 instruction cache (CACR.EIC, bit 15) is enabled while accessing
+ * the bus-stalling SAGA SPI data register ($00FFFE00 / $00DE0000).
+ *
+ * When CACR.EIC == 0 on Apollo 68080 (e.g. after Ssystem(S_CTRLCACHE, 0, 3)),
+ * concurrent uncached instruction-fetch bursts interfere with stalled SAGA SPI
+ * read cycles and corrupt SPI bytes.  Running the SPI poll loop out of L1
+ * I-Cache eliminates instruction-fetch bus traffic during stalled SPI cycles.
+ *
+ * ULONG apollo_spi_icache_enter(void);
+ * void apollo_spi_icache_leave(ULONG saved_cacr);
+ */
+_apollo_spi_icache_enter:
+        move.l  #0x00008000,d0      // default token (bit 15 = 1: no-op on leave)
+        tst.w   _is_apollo_68080
+        jeq     asie_done
+        MOVEC_CACR_D0               // d0 = caller's CACR
+        btst    #15,d0              // EIC (0x00008000) already enabled?
+        jne     asie_done           // yes: fast path, nothing to change
+        move.l  d0,d1
+        bset    #15,d1              // enable EIC only (preserve EDC and other bits)
+        nop
+        CINVA_IC                    // discard any stale I-Cache lines first
+        nop
+        MOVEC_D1_CACR
+        nop
+asie_done:
+        rts
+
+_apollo_spi_icache_leave:
+        move.l  4(sp),d0            // saved_cacr from apollo_spi_icache_enter()
+        btst    #15,d0              // was EIC already enabled on entry?
+        jne     asil_done           // yes: fast path, nothing to restore
+        nop
+        MOVEC_D0_CACR               // restore caller's CACR (with EIC = 0)
+        nop
+        CINVA_IC                    // leave I-Cache invalidated
+        nop
+asil_done:
         rts
 #endif
 

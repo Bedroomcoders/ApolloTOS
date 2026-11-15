@@ -100,4 +100,9 @@ extern BOOL is_apollo_68080;
   #define IS_APOLLO_68080 0
 #endif
 
+#if CONF_WITH_VAMPIRE_SPI && CONF_WITH_APOLLO_68080
+ULONG apollo_spi_icache_enter(void);
+void apollo_spi_icache_leave(ULONG saved_cacr);
+#endif
+
 #endif /* PROCESSOR_H */

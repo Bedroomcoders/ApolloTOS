@@ -20,11 +20,22 @@
 #include "gemerror.h"
 #include "sd.h"
 #include "spi.h"
+#include "processor.h"
 #include "string.h"
 #include "tosvars.h"
 #include "coldfire.h"
 
 #if CONF_WITH_SDMMC
+
+#if CONF_WITH_VAMPIRE_SPI && CONF_WITH_APOLLO_68080
+# define SPI_ICACHE_DECL        ULONG saved_cacr;
+# define SPI_ICACHE_ENTER()     (saved_cacr = apollo_spi_icache_enter())
+# define SPI_ICACHE_LEAVE()     apollo_spi_icache_leave(saved_cacr)
+#else
+# define SPI_ICACHE_DECL
+# define SPI_ICACHE_ENTER()     do { } while (0)
+# define SPI_ICACHE_LEAVE()     do { } while (0)
+#endif
 
 /*
  *  SD card commands
@@ -158,6 +169,7 @@ LONG sd_rw(WORD rw,ULONG sector,UWORD count,UBYTE *buf,WORD dev)
 LONG ret = 0L;
 UBYTE *p = buf;
 int retry;
+SPI_ICACHE_DECL
 
     if (dev)
         return EUNDEV;
@@ -165,12 +177,18 @@ int retry;
     if (count == 0)
         return 0;
 
+    SPI_ICACHE_ENTER();
+
     /* see if we need to (re)initialise the card after a previous removal/error */
     if (card.type == CARDTYPE_UNKNOWN) {
-        if (sd_check(dev))
-            return EDRVNR;
-        if (!(rw & RW_NOMEDIACH))
-            return E_CHNG;
+        if (sd_check(dev)) {
+            ret = EDRVNR;
+            goto out;
+        }
+        if (!(rw & RW_NOMEDIACH)) {
+            ret = E_CHNG;
+            goto out;
+        }
     }
 
     /*
@@ -203,6 +221,8 @@ int retry;
     if (ret < 0)
         KDEBUG(("sd_rw(%d,%lu,%u,%p,%d) rc=%ld\n",rw,sector,count,p,dev,ret));
 
+out:
+    SPI_ICACHE_LEAVE();
     return ret;
 }
 
@@ -214,6 +234,7 @@ LONG sd_ioctl(UWORD drv,UWORD ctrl,void *arg)
 LONG rc = 0;
 ULONG *info = arg;
 UBYTE cardreg[16];
+SPI_ICACHE_DECL
 
 #ifdef __mcoldfire__
     /* FIXME: Add and use HAS_SDMMC instead */
@@ -223,6 +244,8 @@ UBYTE cardreg[16];
 
     if (drv)
         return EUNDEV;
+
+    SPI_ICACHE_ENTER();
 
     switch(ctrl) {
     case GET_DISKINFO:
@@ -273,6 +296,7 @@ UBYTE cardreg[16];
         rc = ERR;
     }
 
+    SPI_ICACHE_LEAVE();
     return rc;
 }
 
@@ -300,7 +324,9 @@ int rc = ERR;
  */
 static LONG sd_check(UWORD drv)
 {
+LONG ret = 0L;
 int i, rc;
+SPI_ICACHE_DECL
 
 #ifdef __mcoldfire__
     /* FIXME: Add and use HAS_SDMMC instead */
@@ -310,6 +336,8 @@ int i, rc;
 
     if (drv)
         return EUNDEV;
+
+    SPI_ICACHE_ENTER();
 
     spi_initialise();
     spi_clock_ident();
@@ -333,7 +361,8 @@ int i, rc;
         KDEBUG(("CMD0 failed, rc=%d, response=0x%02x\n",rc,response[0]));
         card.type = CARDTYPE_UNKNOWN;
         spi_cs_unassert();
-        return EDRVNR;
+        ret = EDRVNR;
+        goto out;
     }
 
     /*
@@ -363,10 +392,13 @@ int i, rc;
         spi_clock_mmc();
         break;
     default:
-        return EDRVNR;
+        ret = EDRVNR;
+        break;
     }
 
-    return 0L;
+out:
+    SPI_ICACHE_LEAVE();
+    return ret;
 }
 
 /*
