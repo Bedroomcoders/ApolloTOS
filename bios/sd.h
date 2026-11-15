@@ -17,7 +17,7 @@
 /* driver functions */
 void sd_init(void);
 LONG sd_ioctl(UWORD drv,UWORD ctrl,void *arg);
-LONG sd_rw(WORD rw,LONG sector,WORD count,UBYTE *buf,WORD dev);
+LONG sd_rw(WORD rw,ULONG sector,UWORD count,UBYTE *buf,WORD dev);
 
 #endif /* CONF_WITH_SDMMC */
 

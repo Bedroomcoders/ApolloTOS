@@ -74,11 +74,13 @@
                             /* these are byte-count timeout values */
 #define SD_CMD_TIMEOUT          64      /* between sending crc & receiving response */
 #define SD_CSD_TIMEOUT          2500    /* between sending SEND_CSD cmd & receiving data */
+#define SD_MIN_POLL_BYTES       4096L   /* min SPI polls before checking hz_200 (preemption-safe) */
+#define SD_MAX_POLL_BYTES       2500000L /* max SPI polls when IPL >= 6 freezes hz_200 (~1s @ 25MHz) */
                             /* these are millisecond timeout values (see SD specifications v4.10) */
 #define SD_POWERUP_DELAY_MSEC   1       /* minimum power-up time */
 #define SD_INIT_TIMEOUT_MSEC    1000    /* waiting for card to become ready */
-#define SD_READ_TIMEOUT_MSEC    100     /* waiting for start bit of data block */
-#define SD_WRITE_TIMEOUT_MSEC   500     /* waiting for end of busy */
+#define SD_READ_TIMEOUT_MSEC    500     /* waiting for start bit of data block */
+#define SD_WRITE_TIMEOUT_MSEC   1000    /* waiting for end of busy */
                             /* these are derived timeout values in TOS ticks */
 #define SD_POWERUP_DELAY_TICKS  msec_to_ticks(SD_POWERUP_DELAY_MSEC)
 #define SD_INIT_TIMEOUT_TICKS   msec_to_ticks(SD_INIT_TIMEOUT_MSEC)
@@ -151,11 +153,11 @@ void sd_init(void)
 /*
  *  read/write interface
  */
-LONG sd_rw(WORD rw,LONG sector,WORD count,UBYTE *buf,WORD dev)
+LONG sd_rw(WORD rw,ULONG sector,UWORD count,UBYTE *buf,WORD dev)
 {
-LONG ret;
+LONG ret = 0L;
 UBYTE *p = buf;
-int i;
+int retry;
 
     if (dev)
         return EUNDEV;
@@ -163,46 +165,43 @@ int i;
     if (count == 0)
         return 0;
 
+    /* see if we need to (re)initialise the card after a previous removal/error */
+    if (card.type == CARDTYPE_UNKNOWN) {
+        if (sd_check(dev))
+            return EDRVNR;
+        if (!(rw & RW_NOMEDIACH))
+            return E_CHNG;
+    }
+
     /*
-     * retry at most once (to handle reinitialisation)
+     * perform transfer with up to 2 retries on transient SPI/SD errors.
+     * XHDI XHReadWrite() calls disk_rw() -> sd_rw() directly without
+     * blkdev_rwabs()'s retry wrapper, and must not receive a false E_CHNG
+     * on a transient glitch or while the card finishes internal programming.
      */
-    for (i = 0; i < 2; i++) {
-        /* see if we need to (re)initialise the card after a previous error */
-        if (card.type == CARDTYPE_UNKNOWN) {
+    for (retry = 0; retry < 3; retry++) {
+        if (retry > 0) {
+            spi_cs_assert();
+            sd_wait_for_not_busy(SD_WRITE_TIMEOUT_TICKS);
+            spi_cs_unassert();
+        }
+        if (retry == 2) {
             if (sd_check(dev)) {
-                ret = EDRVNR;
-                break;
-            }
-            if (!(rw & RW_NOMEDIACH)) {
-                ret = E_CHNG;
+                card.type = CARDTYPE_UNKNOWN;
+                ret = (rw & RW_NOMEDIACH) ? EDRVNR : E_CHNG;
                 break;
             }
         }
 
         ret = (rw&RW_RW) ? sd_write(dev,sector,count,p) : sd_read(dev,sector,count,p);
-
         if (ret == 0L)
             break;
 
-        if (ret > 0L) {         /* error but not timeout */
-            ret = (rw&RW_RW) ? EWRITF : EREADF;
-            break;
-        }
-
-        /* at this point, it must be a timeout.  we set the return
-         * code in case the retry has failed
-         */
-        ret = (rw & RW_NOMEDIACH) ? EDRVNR : E_CHNG;
-
-        /* for timeouts, card.type should already be set to
-         * CARDTYPE_UNKNOWN, but we'll set it here anyway
-         * (this is what forces the reinitialisation on retry)
-         */
-        card.type = CARDTYPE_UNKNOWN;
+        ret = (rw&RW_RW) ? EWRITF : EREADF;
     }
 
     if (ret < 0)
-        KDEBUG(("sd_rw(%d,%ld,%d,%p,%d) rc=%ld\n",rw,sector,count,p,dev,ret));
+        KDEBUG(("sd_rw(%d,%lu,%u,%p,%d) rc=%ld\n",rw,sector,count,p,dev,ret));
 
     return ret;
 }
@@ -256,7 +255,13 @@ UBYTE cardreg[16];
         }
         break;
     case GET_MEDIACHANGE:
-        if (sd_special_read(CMD9,cardreg) == 0)
+        /* retry CMD9 once before declaring media change: a removed/re-inserted
+         * card powers up in native SD mode (not SPI mode) so CMD9 fails both
+         * times, whereas a transient SPI glitch succeeds on retry without
+         * falsely invalidating open filesystems under FreeMiNT.
+         */
+        if ((sd_special_read(CMD9,cardreg) == 0)
+         || (sd_special_read(CMD9,cardreg) == 0))
             rc = MEDIANOCHANGE;
         else {
             if (sd_check(drv))  /*  attempt to reset device  */
@@ -369,8 +374,8 @@ int i, rc;
  */
 static LONG sd_read(UWORD drv,ULONG sector,UWORD count,UBYTE *buf)
 {
-LONG i, rc, rc2;
-LONG posn, incr;
+ULONG i, posn, incr;
+LONG rc, rc2;
 
     spi_cs_assert();
 
@@ -425,8 +430,8 @@ LONG posn, incr;
  */
 static LONG sd_write(UWORD drv,ULONG sector,UWORD count,UBYTE *buf)
 {
-LONG i, rc, rc2;
-LONG posn, incr;
+ULONG i, posn, incr;
+LONG rc, rc2;
 
     spi_cs_assert();
 
@@ -574,17 +579,15 @@ static int sd_command(UBYTE cmd,ULONG argument,UBYTE crc,UBYTE resp_type,UBYTE *
 static int sd_receive_data(UBYTE *buf,UWORD len,UWORD special)
 {
 LONG i;
-UBYTE token;
+LONG min_polls = special ? SD_CSD_TIMEOUT : SD_MIN_POLL_BYTES;
+ULONG end = hz_200 + SD_READ_TIMEOUT_TICKS;
+UBYTE token = 0xff;
 
-    /* wait for the token */
-    {
-        ULONG end = hz_200 + SD_READ_TIMEOUT_TICKS;
-        MAYBE_UNUSED(special);
-        while(hz_200 < end) {
-            token = spi_recv_byte();
-            if (token != 0xff)
-                break;
-        }
+    /* wait for the token (safe across preemption and when IPL >= 6) */
+    for (i = 0; (i < min_polls) || ((hz_200 < end) && (i < SD_MAX_POLL_BYTES)); i++) {
+        token = spi_recv_byte();
+        if (token != 0xff)
+            break;
     }
     if (token == 0xff)
         return -1;
@@ -637,6 +640,7 @@ UBYTE rtoken;
         rtoken = sd_get_dataresponse();
         if ((rtoken & DATARESPONSE_TOKEN_MASK) != 0x05) {
             KDEBUG(("sd_send_data() response token 0x%02x\n",rtoken));
+            sd_wait_for_not_busy(SD_WRITE_TIMEOUT_TICKS);
             return -1;
         }
     }
@@ -761,7 +765,7 @@ ULONG c_size;
         c_size = csd[7] & 0x3f;
         c_size = (c_size << 8) + csd[8];
         c_size = (c_size << 8) + csd[9];
-        return c_size * SDV2_CSIZE_MULTIPLIER;
+        return (c_size + 1) * SDV2_CSIZE_MULTIPLIER;
     }
 
     read_bl_len = csd[5] & 0x0f;
@@ -790,23 +794,45 @@ ULONG c_size;
 static UBYTE sd_get_dataresponse(void)
 {
 ULONG pattern;
+UBYTE b = 0xff;
+int i;
 
-        pattern = (ULONG)spi_recv_byte() << 24;    /* accumulate 4 bytes */
-        pattern |= (ULONG)spi_recv_byte() << 16;
-        pattern |= (ULONG)spi_recv_byte() << 8;
-        pattern |= (ULONG)spi_recv_byte();
+    /* skip leading 0xff idle bytes (at 25 MHz SPI there may be >3) */
+    for (i = 0; i < SD_CMD_TIMEOUT; i++) {
+        b = spi_recv_byte();
+        if (b != 0xff)
+            break;
+    }
+    if (b == 0xff)
+        return 0xff;
 
-        /* the first 3 bits are undefined */
-        pattern |= 0xe0000000L;             /* first 3 bits are undefined */
+    /*
+     * Standard byte-aligned SPI data response token is xxx0sss1
+     * (bit 4 = 0 start bit, bit 0 = 1 end bit), where bits 7..5
+     * may be driven 000 (e.g. 0x05) or 111 (e.g. 0xe5).  No
+     * unaligned bit shift can satisfy (b & 0x11) == 0x01.
+     */
+    if ((b & 0x11) == 0x01)
+        return b & DATARESPONSE_TOKEN_MASK;
 
-        /* left-adjust to leading 0 bit */
-        while(pattern & 0x80000000L)
-            pattern <<= 1;
+    /* accumulate 3 more bytes in case token straddles a byte boundary */
+    pattern = ((ULONG)b << 24)
+            | ((ULONG)spi_recv_byte() << 16)
+            | ((ULONG)spi_recv_byte() << 8)
+            | (ULONG)spi_recv_byte();
 
-        /* right-adjust to put code into bits 4-0 */
-        pattern >>= 27;
+    /* if response started in the first byte, the top 3 bits are undefined */
+    if (i == 0)
+        pattern |= 0xe0000000UL;
 
-        return LOBYTE(pattern);
+    /* left-adjust to leading 0 bit */
+    while(pattern & 0x80000000UL)
+        pattern <<= 1;
+
+    /* right-adjust to put code into bits 4-0 */
+    pattern >>= 27;
+
+    return LOBYTE(pattern);
 }
 
 /*
@@ -822,8 +848,9 @@ ULONG pattern;
 static int sd_wait_for_not_idle(UBYTE cmd,ULONG arg)
 {
 ULONG end = hz_200 + SD_INIT_TIMEOUT_TICKS;
+LONG i;
 
-    while(hz_200 < end) {
+    for (i = 0; (i < 64) || ((hz_200 < end) && (i < 10000L)); i++) {
         if (cmd == ACMD41)
             if (sd_command(CMD55,0L,0,R1,response) < 0)
                 break;
@@ -847,9 +874,10 @@ ULONG end = hz_200 + SD_INIT_TIMEOUT_TICKS;
 static int sd_wait_for_not_busy(LONG timeout)
 {
 ULONG end = hz_200 + timeout;
+LONG i;
 UBYTE c;
 
-    while(hz_200 < end) {
+    for (i = 0; (i < SD_MIN_POLL_BYTES) || ((hz_200 < end) && (i < SD_MAX_POLL_BYTES)); i++) {
         c = spi_recv_byte();
         if (c != 0x00)
             return 0;
@@ -869,9 +897,10 @@ UBYTE c;
 static int sd_wait_for_ready(LONG timeout)
 {
 ULONG end = hz_200 + timeout;
+LONG i;
 UBYTE c;
 
-    while(hz_200 < end) {
+    for (i = 0; (i < SD_MIN_POLL_BYTES) || ((hz_200 < end) && (i < SD_MAX_POLL_BYTES)); i++) {
         c = spi_recv_byte();
         if (c == 0xff)
             return 0;
