@@ -35,38 +35,45 @@ UBYTE meminit_flags;
 
 /*
  * Detect top of physical FastRAM on Apollo V4 (512 MB, 1 GB, or 2 GB)
- * using mirror probes at 4 MB, 516 MB, and 1028 MB.
+ * by probing address aliasing at the top of the reserved high-VRAM region
+ * ($1FFFFFFE, $3FFFFFFE, $7FFFFFFE) once at boot and caching the result.
  */
 ULONG v4_detect_phys_ram_top(void)
 {
-    volatile ULONG *p0 = (volatile ULONG *)0x00400000UL;
-    volatile ULONG *p1 = (volatile ULONG *)0x20400000UL;
-    volatile ULONG *p2 = (volatile ULONG *)0x40400000UL;
-    ULONG save0 = *p0;
-    ULONG save1 = *p1;
-    ULONG save2 = *p2;
+    static ULONG cached_phys_ram_top;
+    volatile UWORD *p512  = (volatile UWORD *)0x1FFFFFFEUL;
+    volatile UWORD *p1024 = (volatile UWORD *)0x3FFFFFFEUL;
+    volatile UWORD *p2048 = (volatile UWORD *)0x7FFFFFFEUL;
     ULONG top;
 
-    *p0 = 0x12345678UL;
-    *p1 = 0x87654321UL;
-    *p2 = 0xABCDEF01UL;
-    asm volatile ("nop" : : : "memory");
+    if ((cached_phys_ram_top == 0x20000000UL)
+     || (cached_phys_ram_top == 0x40000000UL)
+     || (cached_phys_ram_top == 0x80000000UL))
+        return cached_phys_ram_top;
 
-    if (*p0 == 0x12345678UL)
+    /* Probe 512 MB vs 1 GB aliasing */
+    *p512 = 0x0200U;
+    flush_data_cache((void *)p512, sizeof(UWORD));
+    *p1024 = 0x0400U;
+    flush_data_cache((void *)p1024, sizeof(UWORD));
+
+    if ((*p1024 != 0x0400U) || (*p512 != 0x0200U))
     {
-        if (*p1 == 0x87654321UL)
+        top = 0x20000000UL;     /* 512 MB */
+    }
+    else
+    {
+        /* Probe 1 GB vs 2 GB aliasing */
+        *p2048 = 0x0800U;
+        flush_data_cache((void *)p2048, sizeof(UWORD));
+
+        if ((*p1024 == 0x0400U) && (*p512 == 0x0200U) && (*p2048 == 0x0800U))
             top = 0x80000000UL; /* 2048 MB */
         else
             top = 0x40000000UL; /* 1024 MB */
     }
-    else
-    {
-        top = 0x20000000UL;     /* 512 MB */
-    }
 
-    *p2 = save2;
-    *p1 = save1;
-    *p0 = save0;
+    cached_phys_ram_top = top;
     return top;
 }
 
