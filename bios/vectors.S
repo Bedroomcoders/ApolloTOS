@@ -96,11 +96,21 @@
         .extern _savptr
         .extern _xbios_do_unimpl
         .extern _kcl_hook
+#if CONF_WITH_APOLLO_V4
+        .extern _stktop
+        .extern _main
+#endif
 
         .text
 
 /* basically initialize the 62 exception vectors. */
 _init_exc_vec:
+#if CONF_WITH_APOLLO_V4
+        // On Apollo V4, $00000000-$00000007 is ordinary SDRAM rather than a
+        // hardware ROM mirror; populate Initial SSP/PC for software cold resets.
+        move.l  #_stktop, 0x00.w
+        move.l  #_main, 0x04.w
+#endif
         lea     deflt_vec_table, a0
         lea     8, a1
         move.l  #61, d0
