@@ -1235,6 +1235,9 @@ LONG disk_rw(UWORD unit, UWORD rw, ULONG sector, UWORD count, UBYTE *buf)
         ret = EUNDEV;
     }
 
+    if (ret == 0)
+        units[unit].last_access = hz_200;
+
     return ret;
 }
 

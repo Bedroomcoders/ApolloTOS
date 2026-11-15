@@ -21,6 +21,7 @@
 #include "string.h"
 #include "disk.h"
 #include "ahdi.h"
+#include "processor.h"
 
 
 #if CONF_WITH_XHDI
@@ -448,7 +449,12 @@ static long XHReadWrite(UWORD major, UWORD minor, UWORD rw, ULONG sector,
 
     unit = NUMFLOPPIES + major;
 
-    return disk_rw(unit, rw, sector, count, buf);
+    {
+        long ret = disk_rw(unit, rw, sector, count, buf);
+        if ((ret == 0) && ((rw & RW_RW) == RW_READ))
+            instruction_cache_kludge(buf, (LONG)count << units[unit].psshift);
+        return ret;
+    }
 }
 
 /*=========================================================================*/
