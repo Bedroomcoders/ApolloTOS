@@ -193,3 +193,15 @@ ULONG temp;
 
     return LOBYTE(temp);
 }
+
+void spi_recv_block(UBYTE *buf, UWORD len)
+{
+    while (len--)
+        *buf++ = spi_recv_byte();
+}
+
+void spi_send_block(const UBYTE *buf, UWORD len)
+{
+    while (len--)
+        spi_send_byte(*buf++);
+}

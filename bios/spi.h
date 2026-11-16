@@ -20,5 +20,7 @@ void spi_cs_unassert(void);
 void spi_initialise(void);
 UBYTE spi_recv_byte(void);
 void spi_send_byte(UBYTE input);
+void spi_recv_block(UBYTE *buf, UWORD len);
+void spi_send_block(const UBYTE *buf, UWORD len);
 
 #endif /* _SPI_H */

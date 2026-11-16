@@ -634,8 +634,7 @@ UBYTE token = 0xff;
      *  transfer data
      */
     if (buf) {
-        for (i = 0; i < len; i++)
-            *buf++ = spi_recv_byte();
+        spi_recv_block(buf, len);
     } else {
         for (i = 0; i < len; i++)
             spi_recv_byte();
@@ -655,7 +654,6 @@ UBYTE token = 0xff;
  */
 static int sd_send_data(UBYTE *buf,UWORD len,UBYTE token)
 {
-LONG i;
 UBYTE rtoken;
 
     spi_send_byte(token);
@@ -663,8 +661,7 @@ UBYTE rtoken;
         spi_recv_byte();    /* skip a byte before testing for busy */
     } else {
         /* send the data */
-        for (i = 0; i < len; i++)
-            spi_send_byte(*buf++);
+        spi_send_block(buf, len);
         spi_send_byte(0xff);        /* send dummy crc */
         spi_send_byte(0xff);
 
