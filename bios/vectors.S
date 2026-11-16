@@ -433,6 +433,9 @@ set_video_low:
         // this must be set *after* setting mid/hi bytes
         move.l  _screenpt.w,d0              // recover low address byte
         move.b  d0,0xffff820d.w
+#if CONF_WITH_APOLLO_V4
+        move.l  d0,0x00fffeec               // update SAGA 32-bit Plane0 too
+#endif
 st_shifter:
 #endif
 vbl_no_screenpt:

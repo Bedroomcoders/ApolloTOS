@@ -52,6 +52,28 @@ static const WORD ttrez_from_button[NUM_TT_BUTTONS] =
 
 #if CONF_WITH_VIDEL
 
+#if CONF_WITH_APOLLO_V4
+/*
+ * Modern SAGA resolutions + ST compatibility modes for Apollo V4.
+ * Labels fit the 9-character FREZNAME strings in ADFALREZ.
+ */
+static const char * const v4_rez_names[4] = {
+    "1280x 720",
+    "1024x 768",
+    " 800x 600",
+    " 640x 400"
+};
+
+static const WORD falconmode_from_button[] = {
+    0x4a08, 0x4a09, 0x4a0a, 0x4a0b, 0x4a02,     /* 1280x720: 2, 4, 16, 256, TC */
+    0x4d08, 0x4d09, 0x4d0a, 0x4d0b, 0x4d02,     /* 1024x768: 2, 4, 16, 256, TC */
+    0x4c09, 0x4c0a, 0x4c0b, 0x4c02,             /*  800x600:    4, 16, 256, TC */
+    0x4409, 0x440a, 0x440b, 0x4402,             /*  640x400:    4, 16, 256, TC */
+    VIDEL_COMPAT|VIDEL_80COL|VIDEL_1BPP,        /* ST High   (matches vfixmode) */
+    VIDEL_COMPAT|VIDEL_80COL|VIDEL_2BPP,        /* ST Medium (matches vfixmode) */
+    VIDEL_COMPAT|VIDEL_4BPP                     /* ST Low    (matches vfixmode) */
+};
+#else
 /*
  * maps Falcon dialog buttons to 'base' mode
  * note: these correspond to the VGA videomode settings; the
@@ -79,6 +101,7 @@ static const WORD falconmode_from_button[] =        /*     VGA           RGB    
       VIDEL_COMPAT|VIDEL_80COL|VIDEL_1BPP,                  /* ST High */
       VIDEL_COMPAT|VIDEL_VERTICAL|VIDEL_80COL|VIDEL_2BPP,   /* ST Medium */
       VIDEL_COMPAT|VIDEL_VERTICAL|VIDEL_4BPP };             /* ST Low */
+#endif /* CONF_WITH_APOLLO_V4 */
 
 #define NUM_FALCON_BUTTONS ARRAY_SIZE(falconmode_from_button)
 
@@ -157,6 +180,28 @@ WORD oldmode, oldbase, oldoptions;
 WORD mode, monitor;
 
     oldmode = VsetMode(-1);
+#if CONF_WITH_APOLLO_V4
+    oldoptions = 0;
+    if ((oldmode & 0x4000) == 0 && (oldmode & VIDEL_COMPAT))
+        oldbase = oldmode & (VIDEL_COMPAT|VIDEL_80COL|VIDEL_BPPMASK);
+    else if (oldmode == (VIDEL_VERTICAL|VIDEL_80COL|VIDEL_4BPP))
+        oldbase = 0x440a;
+    else
+        oldbase = oldmode;
+
+    for (i = 0; i < NUM_FALCON_BUTTONS; i++)
+        if (oldbase == falconmode_from_button[i])
+            break;
+    selected = i;
+
+    monitor = VgetMonitor();
+
+    /* set up dialog & display */
+    tree = desk_rs_trees[ADFALREZ];
+
+    for (i = 0, obj = tree+FREZNAME; i < 4; i++, obj++)
+        obj->ob_spec = (LONG)v4_rez_names[i];
+#else
     oldbase = oldmode & (VIDEL_VERTICAL|VIDEL_COMPAT|VIDEL_80COL|VIDEL_BPPMASK);
     oldoptions = oldmode & (VIDEL_OVERSCAN|VIDEL_PAL|VIDEL_VGA);
     if (!(oldoptions&VIDEL_VGA))    /* if RGB mode, */
@@ -177,6 +222,7 @@ WORD mode, monitor;
         for (i = 0, obj = tree+FREZNAME; i < 4; i++, obj++)
             obj->ob_spec = (LONG) desktop_str_addr(STREZ1+i);
     }
+#endif
 
     /*
      * if we're not compiling with 16-bit support in the VDI,
@@ -189,6 +235,13 @@ WORD mode, monitor;
 
     for (i = 0, obj = tree+FREZLIST; i < NUM_FALCON_BUTTONS; i++, obj++) {
         mode = falconmode_from_button[i];
+#if CONF_WITH_APOLLO_V4
+        if ((mode & 0x00ff) == 0x0002) {    /* SAGA RGB16 (Truecolor) */
+#if !CONF_WITH_VDI_16BIT
+            obj->ob_flags |= HIDETREE;
+#endif
+        }
+#else
         if ((mode&VIDEL_BPPMASK) > VIDEL_8BPP) {
             /* hide unsupported TC modes for VGA monitors */
             if ((monitor == MON_VGA) && (mode&VIDEL_80COL))
@@ -198,6 +251,7 @@ WORD mode, monitor;
             obj->ob_flags |= HIDETREE;
 #endif
         }
+#endif
         if (i == selected)
             obj->ob_state |= SELECTED;
         else obj->ob_state &= ~SELECTED;
@@ -215,9 +269,15 @@ WORD mode, monitor;
     if (i == selected)          /* no change */
         return 0;
 
+#if CONF_WITH_APOLLO_V4
+    mode = falconmode_from_button[i];
+    MAYBE_UNUSED(oldoptions);
+    MAYBE_UNUSED(monitor);
+#else
     mode = falconmode_from_button[i] | oldoptions;
     if (!(oldoptions&VIDEL_VGA))    /* if RGB mode, */
         mode ^= VIDEL_VERTICAL;     /* invert the bit returned */
+#endif
 
     if (Srealloc(-1L) < VgetSize(mode)) {
         malloc_fail_alert();

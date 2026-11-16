@@ -321,10 +321,7 @@ static const VMODE_ENTRY other_init_table[] = {
 #define SAGA_VIDEO_MODULO       (*(volatile UWORD *)0x00FFFEE6UL)
 #define SAGA_VIDEO_PLANE_PTR    (*(volatile const UBYTE **)0x00FFFEECUL)
 #define SAGA_VIDEO_MODE         (*(volatile UWORD *)0x00FFFEF4UL)
-#define STE_LINE_OFFSET         (*(volatile UBYTE *)0xFFFF820FUL)
-#define STE_HORZ_SCROLL         (*(volatile UBYTE *)0xFFFF8265UL)
 #define FALCON_LINE_OFFSET      (*(volatile UWORD *)0xFFFF820EUL)
-#define FALCON_SPSHIFT          (*(volatile UWORD *)0xFFFF8266UL)
 
 static const UWORD saga_vga_res_table[8] = {
     0x0100, /* 0: TV 40col non-interlace (320x200) */
@@ -468,12 +465,17 @@ static void v4_get_mode_info(UWORD mode, UWORD *planes, UWORD *hz_rez, UWORD *vt
         *vt_rez = vt;
 }
 
-static UWORD get_videl_bpp(void)
+static UWORD v4_get_mode_bpp(WORD mode)
 {
     UWORD planes;
 
-    v4_get_mode_info(current_video_mode, &planes, NULL, NULL);
+    v4_get_mode_info((UWORD)mode, &planes, NULL, NULL);
     return planes;
+}
+
+static UWORD get_videl_bpp(void)
+{
+    return v4_get_mode_bpp(current_video_mode);
 }
 
 const VMODE_ENTRY *lookup_videl_mode(WORD mode)
@@ -492,11 +494,20 @@ WORD vsetmode(WORD mode)
         return old_mode;
 
     current_video_mode = mode;
+
+    /*
+     * Blank SAGA video mode across 2 VBLs before applying the new mode.
+     * Direct transitions between SAGA modes with close sync timings (or
+     * switching from SAGA back to ST Shifter modes) otherwise leave SAGA's
+     * burst FIFO / sync state misaligned.
+     */
+    vsync();
+    SAGA_VIDEO_MODE = 0;
     SAGA_VIDEO_MODULO = 0;
-    STE_LINE_OFFSET = 0;
-    STE_HORZ_SCROLL = 0;
+    *(volatile UBYTE *)STE_LINE_OFFSET = 0;
     FALCON_LINE_OFFSET = 0;
-    FALCON_SPSHIFT = 0;
+    vsync();
+    vsync();
 
     if ((UWORD)mode & 0x4000)
     {
@@ -1176,6 +1187,26 @@ static void convert2ste(UWORD *ste,const ULONG *falcon)
  */
 static int use_ste_palette(WORD videomode)
 {
+#if CONF_WITH_APOLLO_V4
+    /*
+     * Direct SAGA ($4xxx) and native Falcon modes all use SAGA_VIDEO_MODE
+     * ($00FFFEF4) with the 256-entry Falcon/SAGA CLUT at $FFFF9800.
+     * Only ST-compatible ST_LOW and ST_MEDIUM modes drive ST_SHIFTER ($FFFF8260).
+     */
+    if ((UWORD)videomode & 0x4000)
+        return FALSE;
+
+    if (videomode & VIDEL_COMPAT)
+    {
+        UWORD bpp = videomode & VIDEL_BPPMASK;
+        if (bpp == VIDEL_2BPP)
+            return TRUE;
+        if ((bpp == VIDEL_4BPP) && !(videomode & VIDEL_80COL))
+            return TRUE;
+    }
+
+    return FALSE;
+#else
     if (vmontype() == MON_MONO)                     /* always for ST mono monitor */
         return TRUE;
 
@@ -1186,6 +1217,7 @@ static int use_ste_palette(WORD videomode)
         return TRUE;                                /* and for ST low */
 
     return FALSE;
+#endif
 }
 
 /*
@@ -1272,7 +1304,11 @@ WORD vgetrgb(WORD index,WORD count,ULONG *rgb)
         return -1; /* Generic error */
 
     mode = vsetmode(-1);
+#if CONF_WITH_APOLLO_V4
+    limit = (v4_get_mode_bpp(mode) <= 4) ? 16 : 256;
+#else
     limit = ((mode&VIDEL_BPPMASK)==VIDEL_8BPP) ? 256 : 16;
+#endif
 
     if ((index+count) > limit)
         return -1; /* Generic error */
@@ -1406,6 +1442,16 @@ void initialise_falcon_palette(WORD mode)
     for (i = 0; i < 256; i++)
         falcon_shadow_palette[i] = videl_dflt_palette[i];
 
+#if CONF_WITH_APOLLO_V4
+    {
+        UWORD bpp = v4_get_mode_bpp(mode);
+        if (bpp == 1)
+            falcon_shadow_palette[1] = falcon_shadow_palette[15];
+        else if (bpp == 2)
+            falcon_shadow_palette[3] = falcon_shadow_palette[15];
+        limit = (bpp == 8) ? 256 : 16;
+    }
+#else
     switch(mode&VIDEL_BPPMASK) {
     case VIDEL_1BPP:        /* 2-colour mode */
         falcon_shadow_palette[1] = falcon_shadow_palette[15];
@@ -1425,6 +1471,7 @@ void initialise_falcon_palette(WORD mode)
      * registers.
      */
     limit = ((mode&VIDEL_BPPMASK)==VIDEL_8BPP) ? 256 : 16;
+#endif
     for (i = 0; i < limit; i++)
         fcol_regs[i] = falcon_shadow_palette[i];
 

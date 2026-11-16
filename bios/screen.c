@@ -871,6 +871,10 @@ WORD get_palette(void)
     if (has_videl)
     {
         WORD mode = vsetmode(-1);
+#if CONF_WITH_APOLLO_V4
+        if ((UWORD)mode & 0x4000)
+            return 0;
+#endif
         if ((mode&VIDEL_COMPAT)
          || ((mode&VIDEL_BPPMASK) == VIDEL_4BPP))
             return 4096;
@@ -1041,7 +1045,7 @@ static void atari_setrez(WORD rez, WORD videlmode)
         if ((rez >= 0) && (rez <= 3)) {
             videl_setrez(rez, videlmode);   /* sets 'sshiftmod' */
             /* Atari TOS 4 re-inits the palette */
-            initialise_falcon_palette(videlmode);
+            initialise_falcon_palette(vsetmode(-1));
         }
     }
 #endif
@@ -1177,11 +1181,14 @@ WORD setscreen(UBYTE *logLoc, const UBYTE *physLoc, WORD rez, WORD videlmode)
                 videlmode = vfixmode(videlmode);
                 if (!logLoc && !physLoc) {
 #if CONF_WITH_APOLLO_V4
+                    ULONG req_size = (ULONG)vgetsize(videlmode);
                     UBYTE *addr;
-                    if ((ULONG)vgetsize(videlmode) <= 0x00096000UL)
+                    if (req_size <= 0x00096000UL)
                         addr = phystop - 0x00096000UL;
                     else
                         addr = (UBYTE *)(v4_detect_phys_ram_top() - v4_reserved_vram_size());
+                    bzero(addr, req_size);
+                    flush_data_cache(addr, req_size);
 #else
                     UBYTE *addr = (UBYTE *)Srealloc(vgetsize(videlmode));
                     if (!addr)      /* Srealloc() failed */
@@ -1195,9 +1202,11 @@ WORD setscreen(UBYTE *logLoc, const UBYTE *physLoc, WORD rez, WORD videlmode)
             oldmode = vsetmode(-1);
         }
 #if CONF_WITH_APOLLO_V4
-        else if (!logLoc && !physLoc) {
+        else if (((LONG)logLoc <= 0) && ((LONG)physLoc <= 0)) {
             if ((ULONG)physbase() > 0x00FFFFFFUL) {
                 UBYTE *addr = phystop - 0x00096000UL;
+                bzero(addr, 0x00096000UL);
+                flush_data_cache(addr, 0x00096000UL);
                 v_bas_ad = addr;
                 setphys(addr);
             }
