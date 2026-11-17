@@ -949,11 +949,18 @@ void get_pixel_size(WORD *width,WORD *height)
 
 #if CONF_WITH_ATARI_VIDEO
 
+#if CONF_WITH_APOLLO_V4
+/*
+ * SAGA_VIDEO_PLANE0 ($00FFFEEC) is write-only in hardware (reads return
+ * $FFFFFFFF). Shadow the physical screen pointer here so Physbase() returns
+ * 32-bit FastRAM (> 16 MB) addresses accurately while reading live 24-bit
+ * $FFFF8201/$FFFF8203/$FFFF820D registers when in ST-RAM.
+ */
+const UBYTE *saga_physbase_shadow;
+#endif
+
 static const UBYTE *atari_physbase(void)
 {
-#if CONF_WITH_APOLLO_V4
-    return (const UBYTE *)(*(volatile ULONG *)0x00FFFEECUL);
-#else
     ULONG addr;
 
 #if CONF_WITH_NOVA
@@ -961,6 +968,11 @@ static const UBYTE *atari_physbase(void)
         /* Nova/Vofa present and in use? Return its screen memory */
         return get_novamembase();
     }
+#endif
+
+#if CONF_WITH_APOLLO_V4
+    if ((ULONG)saga_physbase_shadow > 0x00FFFFFFUL)
+        return saga_physbase_shadow;
 #endif
 
     addr = *(volatile UBYTE *) VIDEOBASE_ADDR_HI;
@@ -972,12 +984,12 @@ static const UBYTE *atari_physbase(void)
         addr |= *(volatile UBYTE *) VIDEOBASE_ADDR_LOW;
 
     return (UBYTE *)addr;
-#endif
 }
 
 static void atari_setphys(const UBYTE *addr)
 {
 #if CONF_WITH_APOLLO_V4
+    saga_physbase_shadow = addr;
     if ((ULONG)addr <= 0x00FFFFFFUL) {
         *(volatile UBYTE *) VIDEOBASE_ADDR_HI = ((ULONG) addr) >> 16;
         *(volatile UBYTE *) VIDEOBASE_ADDR_MID = ((ULONG) addr) >> 8;

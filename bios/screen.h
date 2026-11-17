@@ -40,6 +40,10 @@
 
 #define TT_PALETTE_BITMASK  0x0fff      /* valid bits in TT_PALETTE_REGS */
 
+#if CONF_WITH_APOLLO_V4
+extern const UBYTE *saga_physbase_shadow;
+#endif
+
 /* hardware-dependent xbios routines */
 
 WORD esetshift(WORD mode);

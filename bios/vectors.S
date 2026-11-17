@@ -99,6 +99,7 @@
 #if CONF_WITH_APOLLO_V4
         .extern _stktop
         .extern _main
+        .extern _saga_physbase_shadow
 #endif
 
         .text
@@ -404,6 +405,12 @@ vbl_no_palette:
         move.l  _screenpt.w,d0
         jeq     vbl_no_screenpt
         move.l  d0,_v_bas_ad.w
+#if CONF_WITH_APOLLO_V4
+        move.l  d0,_saga_physbase_shadow
+        move.l  d0,0x00fffeec               // update SAGA 32-bit Plane0
+        cmp.l   #0x00ffffff,d0
+        jhi     vbl_no_screenpt
+#endif
         // middle & high bytes of address are valid for all shifters
 #ifdef __mcoldfire__
         lsr.l   #8,d0
@@ -433,9 +440,6 @@ set_video_low:
         // this must be set *after* setting mid/hi bytes
         move.l  _screenpt.w,d0              // recover low address byte
         move.b  d0,0xffff820d.w
-#if CONF_WITH_APOLLO_V4
-        move.l  d0,0x00fffeec               // update SAGA 32-bit Plane0 too
-#endif
 st_shifter:
 #endif
 vbl_no_screenpt:
