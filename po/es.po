@@ -1683,3 +1683,7 @@ msgstr "número de argumentos inválido"
 msgid "error code %ld"
 msgstr "código de error %ld"
 
+
+#: desk/deskinf.c
+msgid "  Language / Keyboard..."
+msgstr "  Idioma / Teclado..."

@@ -2879,7 +2879,9 @@ int n;
 
     if (!strcmp(argv[optind], "make"))
     {
-        if (argc-optind != 1)
+        if (argc-optind == 2)
+            languages_file = argv[optind+1];
+        else if (argc-optind != 1)
             usage();
         make();
         exit(0);

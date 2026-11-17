@@ -1,0 +1,10 @@
+#
+# po/LINGUAS.apollo - languages included in ApolloTOS 512KB multi-language ROM
+# (English / Norwegian use built-in US strings; Polish uses latin2 font)
+#
+de atarist
+fr atarist
+es atarist
+it atarist
+
+pl latin2

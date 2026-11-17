@@ -1684,3 +1684,7 @@ msgstr "Falsche Zahl von Parametern"
 msgid "error code %ld"
 msgstr "Fehlercode %ld"
 
+
+#: desk/deskinf.c
+msgid "  Language / Keyboard..."
+msgstr "  Sprache / Tastatur..."

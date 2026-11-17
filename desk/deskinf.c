@@ -24,6 +24,8 @@
 #include "obdefs.h"
 #include "gsxdefs.h"
 #include "gemdos.h"
+#include "xbiosbind.h"
+#include "ctrycodes.h"
 #include "optimopt.h"
 #include "optimize.h"
 #include "rectfunc.h"
@@ -1258,6 +1260,202 @@ void inf_conf(void)
     end_dialog(tree);
 }
 #endif
+
+
+#if CONF_WITH_APOLLO_V4
+/*
+ * Built-in Language & Keyboard (NVRAM _AKP) configuration dialog
+ */
+struct nvram_choice {
+    UBYTE code;
+    const char *name;
+};
+
+static const struct nvram_choice lang_choices[] = {
+    { COUNTRY_US, "English" },
+    { COUNTRY_DE, "Deutsch" },
+    { COUNTRY_FR, "Francais" },
+    { COUNTRY_ES, "Espanol" },
+    { COUNTRY_IT, "Italiano" },
+    { COUNTRY_PL, "Polski" }
+};
+
+static const struct nvram_choice kbd_choices[] = {
+    { COUNTRY_US, "US" },
+    { COUNTRY_UK, "UK" },
+    { COUNTRY_DE, "Germany" },
+    { COUNTRY_FR, "France" },
+    { COUNTRY_ES, "Spain" },
+    { COUNTRY_IT, "Italy" },
+    { COUNTRY_NO, "Norway" },
+    { COUNTRY_SE, "Sweden" },
+    { COUNTRY_FI, "Finland" },
+    { COUNTRY_SG, "Swiss-DE" },
+    { COUNTRY_NL, "Holland" },
+    { COUNTRY_PL, "Poland" }
+};
+
+#define LANG_DLG_LANG   3
+#define LANG_DLG_KBD    5
+#define LANG_DLG_OK     7
+#define LANG_DLG_CAN    8
+
+static const OBJECT lang_dlg_template[] = {
+    { -1,  1,  8, G_BOX,    FL3DBAK, OUTLINED, 0x00011100L,  0, 0, 34, 12 },
+    {  2, -1, -1, G_STRING, NONE,    NORMAL,   (LONG)"LANGUAGE & KEYBOARD", 7, 1, 19, 1 },
+    {  3, -1, -1, G_STRING, NONE,    NORMAL,   (LONG)"Language:", 2, 3, 9, 1 },
+    {  4, -1, -1, G_BUTTON, SELECTABLE|TOUCHEXIT|FL3DBAK|FL3DIND, NORMAL, (LONG)"", 13, 3, 18, 1 },
+    {  5, -1, -1, G_STRING, NONE,    NORMAL,   (LONG)"Keyboard:", 2, 5, 9, 1 },
+    {  6, -1, -1, G_BUTTON, SELECTABLE|TOUCHEXIT|FL3DBAK|FL3DIND, NORMAL, (LONG)"", 13, 5, 18, 1 },
+    {  7, -1, -1, G_STRING, NONE,    NORMAL,   (LONG)"(Reboot to apply changes)", 4, 7, 25, 1 },
+    {  8, -1, -1, G_BUTTON, SELECTABLE|DEFAULT|EXIT|FL3DBAK|FL3DIND, NORMAL, (LONG)"OK", 5, 9, 9, 1 },
+    {  0, -1, -1, G_BUTTON, SELECTABLE|EXIT|LASTOB|FL3DBAK|FL3DIND, NORMAL, (LONG)"Cancel", 19, 9, 9, 1 }
+};
+
+static int find_choice(const struct nvram_choice *list, int count, UBYTE code)
+{
+    int i;
+    for (i = 0; i < count; i++)
+        if (list[i].code == code)
+            return i;
+    return 0;
+}
+
+static void run_choice_popup(OBJECT *dlg, WORD btn_obj,
+                             const struct nvram_choice *choices, int count,
+                             int *cur_idx)
+{
+    OBJECT popup[ARRAY_SIZE(kbd_choices) + 1];
+    char labels[ARRAY_SIZE(kbd_choices)][20];
+    MENU menu, mdata;
+    WORD xpos, ypos;
+    int i;
+
+    popup[0].ob_next = -1;
+    popup[0].ob_head = 1;
+    popup[0].ob_tail = count;
+    popup[0].ob_type = G_BOX;
+    popup[0].ob_flags = NONE;
+    popup[0].ob_state = SHADOWED;
+    popup[0].ob_spec = 0x00FF1100L;
+    popup[0].ob_x = 0;
+    popup[0].ob_y = 0;
+    popup[0].ob_width = 18;
+    popup[0].ob_height = count;
+
+    for (i = 0; i < count; i++)
+    {
+        strcpy(labels[i], "  ");
+        strcat(labels[i], choices[i].name);
+        popup[i + 1].ob_next = (i + 1 < count) ? (i + 2) : 0;
+        popup[i + 1].ob_head = -1;
+        popup[i + 1].ob_tail = -1;
+        popup[i + 1].ob_type = G_STRING;
+        popup[i + 1].ob_flags = (i + 1 == count) ? LASTOB : NONE;
+        popup[i + 1].ob_state = (i == *cur_idx) ? CHECKED : NORMAL;
+        popup[i + 1].ob_spec = (LONG)labels[i];
+        popup[i + 1].ob_x = 0;
+        popup[i + 1].ob_y = i;
+        popup[i + 1].ob_width = 18;
+        popup[i + 1].ob_height = 1;
+    }
+
+    for (i = 0; i <= count; i++)
+        rsrc_obfix(popup, i);
+
+    objc_offset(dlg, btn_obj, &xpos, &ypos);
+    menu.mn_tree = popup;
+    menu.mn_menu = 0;
+    menu.mn_item = *cur_idx + 1;
+    menu.mn_scroll = 0;
+    menu.mn_keystate = 0;
+
+    if (menu_popup(&menu, xpos, ypos, &mdata) &&
+        mdata.mn_item >= 1 && mdata.mn_item <= count)
+    {
+        *cur_idx = mdata.mn_item - 1;
+        dlg[btn_obj].ob_spec = (LONG)choices[*cur_idx].name;
+    }
+}
+
+const char *inf_lang_menu_label(void)
+{
+    return _("  Language / Keyboard...");
+}
+
+void inf_lang(void)
+{
+    OBJECT tree[ARRAY_SIZE(lang_dlg_template)];
+    UBYTE buf[2] = { COUNTRY_US, COUNTRY_US };
+    int lang_idx, kbd_idx;
+    WORD exitobj;
+    int i;
+
+    memcpy(tree, lang_dlg_template, sizeof(tree));
+    for (i = 0; i < (int)ARRAY_SIZE(tree); i++)
+        rsrc_obfix(tree, i);
+
+    NVMaccess(0, 6, 2, buf);
+    lang_idx = find_choice(lang_choices, ARRAY_SIZE(lang_choices), buf[0]);
+    kbd_idx  = find_choice(kbd_choices, ARRAY_SIZE(kbd_choices), buf[1]);
+
+    tree[LANG_DLG_LANG].ob_spec = (LONG)lang_choices[lang_idx].name;
+    tree[LANG_DLG_KBD].ob_spec  = (LONG)kbd_choices[kbd_idx].name;
+
+    start_dialog(tree);
+    for (;;)
+    {
+        exitobj = form_do(tree, 0) & 0x7fff;
+        tree[exitobj].ob_state &= ~SELECTED;
+
+        if (exitobj == LANG_DLG_LANG)
+        {
+            run_choice_popup(tree, LANG_DLG_LANG, lang_choices,
+                             ARRAY_SIZE(lang_choices), &lang_idx);
+        }
+        else if (exitobj == LANG_DLG_KBD)
+        {
+            run_choice_popup(tree, LANG_DLG_KBD, kbd_choices,
+                             ARRAY_SIZE(kbd_choices), &kbd_idx);
+        }
+        else
+        {
+            break;
+        }
+
+        draw_fld(tree, exitobj);
+    }
+    end_dialog(tree);
+
+    if (exitobj == LANG_DLG_OK)
+    {
+        UBYTE nvram_file[50];
+        UBYTE sum;
+        LONG fh;
+
+        buf[0] = lang_choices[lang_idx].code;
+        buf[1] = kbd_choices[kbd_idx].code;
+        NVMaccess(1, 6, 2, buf);
+
+        if (NVMaccess(0, 0, 48, nvram_file) == 0)
+        {
+            for (i = 0, sum = 0; i < 48; i++)
+                sum += nvram_file[i];
+            nvram_file[48] = ~sum;
+            nvram_file[49] = sum;
+
+            fh = dos_create("C:\\GEMSYS\\NVRAM.BIN", 0);
+            if (fh < 0)
+                fh = dos_create("C:\\NVRAM.BIN", 0);
+            if (fh >= 0)
+            {
+                dos_write((WORD)fh, 50L, nvram_file);
+                dos_close((WORD)fh);
+            }
+        }
+    }
+}
+#endif /* CONF_WITH_APOLLO_V4 */
 
 
 /*

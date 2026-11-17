@@ -582,12 +582,16 @@ NODEP += 512
 
 .PHONY: apollotos v4atari
 NODEP += apollotos v4atari
-apollotos v4atari: UNIQUE = $(COUNTRY)
+apollotos v4atari: UNIQUE =
+apollotos v4atari: CPUFLAGS = -m68040
 apollotos v4atari: override DEF += -DTARGET_512 -DMACHINE_APOLLO_V4
 apollotos v4atari: ROMSIZE = 512
+apollotos v4atari: ROM_APOLLO = apollotos.img
+apollotos v4atari: LOCALISE_CTL = localise_apollo.ctl
+apollotos v4atari: LINGUAS_FILE = po/LINGUAS.apollo
 apollotos v4atari:
-	@echo "# Building ApolloTOS 512kB V4 Atari image into $(ROM_PADDED)"
-	$(MAKE) DEF='$(DEF)' OPTFLAGS='$(OPTFLAGS)' UNIQUE=$(UNIQUE) MULTIKEYBD='-k' ROMSIZE=$(ROMSIZE) ROM_PADDED=$(ROM_PADDED) $(ROM_PADDED) REF_OS=TOS404
+	@echo "# Building ApolloTOS 512kB V4 Atari image into $(ROM_APOLLO)"
+	$(MAKE) CPUFLAGS='$(CPUFLAGS)' DEF='$(DEF)' OPTFLAGS='$(OPTFLAGS)' UNIQUE=$(UNIQUE) MULTIKEYBD='-k' ROMSIZE=$(ROMSIZE) ROM_PADDED=$(ROM_APOLLO) LOCALISE_CTL=$(LOCALISE_CTL) LINGUAS_FILE=$(LINGUAS_FILE) $(ROM_APOLLO) REF_OS=TOS404
 	@printf "$(LOCALCONFINFO)"
 
 #
@@ -949,15 +953,18 @@ obj/lisaboot.o: obj/ramtos.h
 GEN_SRC += bios/ctables.h include/i18nconf.h
 TOCLEAN += $(TOOLDIR)/localise* include/i18nconf.h bios/ctables.h
 
+LOCALISE_CTL ?= localise.ctl
+LINGUAS_FILE ?= po/LINGUAS
+
 NODEP += $(TOOLDIR)/localise
 $(TOOLDIR)/localise: tools/localise.c
 	$(NATIVECC) $< -o $@
 
-bios/ctables.h: obj/country localise.ctl $(TOOLDIR)/localise
-	$(TOOLDIR)/localise $(UNIQUEARG) $(MULTIKEYBD) localise.ctl bios/ctables.h localise1.tmp
+bios/ctables.h: obj/country $(LOCALISE_CTL) $(TOOLDIR)/localise
+	$(TOOLDIR)/localise $(UNIQUEARG) $(MULTIKEYBD) $(LOCALISE_CTL) bios/ctables.h localise1.tmp
 
-include/i18nconf.h: obj/country localise.ctl $(TOOLDIR)/localise
-	$(TOOLDIR)/localise $(UNIQUEARG) $(MULTIKEYBD) localise.ctl localise2.tmp include/i18nconf.h
+include/i18nconf.h: obj/country $(LOCALISE_CTL) $(TOOLDIR)/localise
+	$(TOOLDIR)/localise $(UNIQUEARG) $(MULTIKEYBD) $(LOCALISE_CTL) localise2.tmp include/i18nconf.h
 
 #
 # NLS support
@@ -973,8 +980,8 @@ $(TOOLDIR)/bug: tools/bug.c
 	$(NATIVECC) $< -o $@
 
 # even if UNIQUE is specified, we ensure langs.c exists to avoid dependency problems
-util/langs.c: $(POFILES) po/LINGUAS $(TOOLDIR)/bug po/messages.pot
-	$(TOOLDIR)/bug make || { rm -f $@; false; }
+util/langs.c: $(POFILES) $(LINGUAS_FILE) $(TOOLDIR)/bug po/messages.pot
+	$(TOOLDIR)/bug make $(LINGUAS_FILE) || { rm -f $@; false; }
 
 po/messages.pot: $(TOOLDIR)/bug po/POTFILES.in $(shell grep -v '^#' po/POTFILES.in)
 	$(TOOLDIR)/bug xgettext

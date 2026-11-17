@@ -1677,3 +1677,7 @@ msgstr "numero errato di argomenti"
 msgid "error code %ld"
 msgstr "codice errore %ld"
 
+
+#: desk/deskinf.c
+msgid "  Language / Keyboard..."
+msgstr "  Lingua / Tastiera..."

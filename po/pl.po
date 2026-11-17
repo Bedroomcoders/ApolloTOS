@@ -1677,3 +1677,7 @@ msgstr "z³a ilo¶æ argumentów"
 msgid "error code %ld"
 msgstr "kod b³êdu %ld"
 
+
+#: desk/deskinf.c
+msgid "  Language / Keyboard..."
+msgstr "  Jêzyk / Klawiatura..."

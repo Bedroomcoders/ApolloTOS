@@ -120,28 +120,6 @@ static void set_sum(UWORD sum)
     nvram_buf[NVRAM_CKSUM + 1] = LOBYTE(sum);
 }
 
-static void write_nvram_file(void)
-{
-    LONG fh;
-
-    if (!(boot_status & DOS_AVAILABLE))
-        return;
-
-    fh = Fopen(nvram_path_1, 1);
-    if (fh < 0)
-        fh = Fopen(nvram_path_2, 1);
-    if (fh < 0)
-        fh = Fcreate(nvram_path_1, 0);
-    if (fh < 0)
-        fh = Fcreate(nvram_path_2, 0);
-
-    if (fh >= 0)
-    {
-        Fwrite((WORD)fh, NVRAM_SIZE, nvram_buf);
-        Fclose((WORD)fh);
-    }
-}
-
 static void load_or_init_nvram(void)
 {
     LONG fh;
@@ -158,7 +136,7 @@ static void load_or_init_nvram(void)
 
         if (fh >= 0)
         {
-            nread = Fread((WORD)fh, NVRAM_SIZE, nvram_buf);
+            nread = Fread((WORD)fh, (LONG)NVRAM_SIZE, nvram_buf);
             Fclose((WORD)fh);
 
             if ((nread == NVRAM_SIZE) && (compute_sum() == get_sum()))
@@ -191,7 +169,6 @@ WORD nvmaccess(WORD type, WORD start, WORD count, UBYTE *buffer)
         if (cookie_mch == MCH_TT)
         {
             set_sum(compute_sum());
-            write_nvram_file();
         }
         else
         {
@@ -226,7 +203,6 @@ WORD nvmaccess(WORD type, WORD start, WORD count, UBYTE *buffer)
             nvram_buf[i] = *buffer++;
         }
         set_sum(compute_sum());
-        write_nvram_file();
         break;
     default:
         return -5;

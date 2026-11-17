@@ -938,6 +938,11 @@ static WORD do_optnmenu(WORD item)
         Supexec((LONG)desktop_set_cache);   /* uses G.g_cache */
         break;
 #endif
+#if CONF_WITH_APOLLO_V4
+    case CACHITEM + 1:
+        inf_lang();
+        break;
+#endif
     }
 
     return done;
@@ -1873,9 +1878,34 @@ static WORD desk_xlate_fix(void)
     xlate_obj_array(desk_rs_obj, RS_NOBS);
 
 #if CONF_WITH_APOLLO_V4
+    static OBJECT apollo_menu[CACHITEM + 2];
+    OBJECT *optbox;
+    WORD optidx;
+
     tree[2].ob_spec = (LONG) "- ApolloTOS -";
     tree[2].ob_x = 13;
     tree[2].ob_width = 14;
+
+    /* Insert "Language / Keyboard..." right after "Desktop configuration..." in Options menu */
+    memcpy(apollo_menu, desk_rs_trees[ADMENU], (CACHITEM + 1) * sizeof(OBJECT));
+    optidx = apollo_menu[CACHITEM].ob_next;
+    optbox = &apollo_menu[optidx];
+    optbox->ob_height += 1;
+    apollo_menu[CACHITEM + 1].ob_next = apollo_menu[CONFITEM].ob_next;
+    apollo_menu[CACHITEM + 1].ob_head = -1;
+    apollo_menu[CACHITEM + 1].ob_tail = -1;
+    apollo_menu[CACHITEM + 1].ob_type = G_STRING;
+    apollo_menu[CACHITEM + 1].ob_flags = NONE;
+    apollo_menu[CACHITEM + 1].ob_state = NORMAL;
+    apollo_menu[CACHITEM + 1].ob_spec = (LONG)inf_lang_menu_label();
+    apollo_menu[CACHITEM + 1].ob_x = 0;
+    apollo_menu[CACHITEM + 1].ob_y = apollo_menu[CONFITEM].ob_y + 1;
+    apollo_menu[CACHITEM + 1].ob_width = apollo_menu[CONFITEM].ob_width;
+    apollo_menu[CACHITEM + 1].ob_height = 1;
+    apollo_menu[CONFITEM].ob_next = CACHITEM + 1;
+    for (i = RESITEM; i <= CACHITEM; i++)
+        apollo_menu[i].ob_y += 1;
+    desk_rs_trees[ADMENU] = apollo_menu;
 #endif
 
     /* copies menu item strings to RAM */
@@ -1905,6 +1935,12 @@ static WORD desk_xlate_fix(void)
     {
         rsrc_obfix(desk_rs_obj, i);
     }
+#if CONF_WITH_APOLLO_V4
+    for(i = 0 ; i <= CACHITEM + 1 ; i++)
+    {
+        rsrc_obfix(apollo_menu, i);
+    }
+#endif
 
 #if CONF_WITH_3D_OBJECTS
     adjust_3d_positions();
@@ -1915,6 +1951,9 @@ static WORD desk_xlate_fix(void)
      * translation and coordinate fixing
      */
     align_objects(desk_rs_obj, RS_NOBS);
+#if CONF_WITH_APOLLO_V4
+    align_objects(apollo_menu, CACHITEM + 2);
+#endif
 
     return 0;
 }

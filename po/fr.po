@@ -1686,3 +1686,7 @@ msgstr "mauvais nombre d'arguments"
 msgid "error code %ld"
 msgstr "code d'erreur %ld"
 
+
+#: desk/deskinf.c
+msgid "  Language / Keyboard..."
+msgstr "  Langue / Clavier..."

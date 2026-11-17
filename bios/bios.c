@@ -854,6 +854,10 @@ void biosmain(void)
     Dsetdrv(bootdev);           /* Set boot drive */
 #if CONF_WITH_APOLLO_V4
     fill_cookie_jar_nvram();    /* Populate _AKP and _IDT from file-backed NVRAM on C: */
+    font_init();                /* Re-select system font for NVRAM country (e.g. Polish l2) */
+    vt52_init();                /* Re-apply default font to console */
+    nls_set_lang(get_lang_name()); /* Switch UI language to NVRAM _AKP setting */
+    bioskeys();                 /* Load keyboard table for NVRAM _AKP setting */
 #endif
     init_default_environment(); /* Build default environment string */
 

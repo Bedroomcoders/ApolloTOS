@@ -270,6 +270,28 @@ static __inline__ short xbios_w_ww(int op, short a, short b)
     return retval;
 }
 
+static __inline__ short xbios_w_wwwl(int op, short a, short b, short c, long d)
+{
+    register long retval __asm__("d0");
+
+    __asm__ volatile (
+        "move.l  %5,-(sp)\n\t"
+        "move.w  %4,-(sp)\n\t"
+        "move.w  %3,-(sp)\n\t"
+        "move.w  %2,-(sp)\n\t"
+        "move.w  %1,-(sp)\n\t"
+        "trap    #14\n\t"
+        "lea     12(sp),sp"
+         : "=r"(retval)
+         : "nr"(op), "nr"(a), "nr"(b), "nr"(c), "ir"(d)
+         : "d1", "d2", "a0", "a1", "a2", "memory", "cc"
+        );
+    return retval;
+}
+
+#define NVMaccess(type, start, count, buffer) \
+    xbios_w_wwwl(46, (type), (start), (count), (long)(buffer))
+
 static __inline__ short xbios_w_llwwwww(int op,
     long a, long b, short c, short d, short e, short f, short g)
 {

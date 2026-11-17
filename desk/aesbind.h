@@ -57,6 +57,17 @@ WORD menu_ienable(OBJECT *tree, WORD itemnum, WORD enableit);
 WORD menu_tnormal(OBJECT *tree, WORD titlenum, WORD normalit);
 /* WORD menu_text(OBJECT *tree, WORD inum, const char *ptext); */
 /* WORD menu_register(WORD pid, const char *pstr); */
+#if CONF_WITH_MENU_EXTENSION
+typedef struct {
+    OBJECT  *mn_tree;       /* submenu tree */
+    WORD    mn_menu;        /* parent object of menu items (enclosing box) */
+    WORD    mn_item;        /* starting item number */
+    WORD    mn_scroll;      /* menu scroll flag */
+    WORD    mn_keystate;    /* current shiftkey state */
+} MENU;
+
+WORD menu_popup(MENU *menu, WORD xpos, WORD ypos, MENU *mdata);
+#endif
 
 
 /*

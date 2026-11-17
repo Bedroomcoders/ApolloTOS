@@ -29,4 +29,9 @@ BOOL inf_backgrounds(void);
 void inf_conf(void);
 #endif
 
+#if CONF_WITH_APOLLO_V4
+const char *inf_lang_menu_label(void);
+void inf_lang(void);
+#endif
+
 #endif  /* _DESKINF_H */

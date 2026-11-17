@@ -345,6 +345,17 @@ WORD menu_register(WORD pid, const char *pstr)
 }
 */
 
+#if CONF_WITH_MENU_EXTENSION
+WORD menu_popup(MENU *menu, WORD xpos, WORD ypos, MENU *mdata)
+{
+    MPOP_IN = (LONG)menu;
+    MPOP_XPOS = xpos;
+    MPOP_YPOS = ypos;
+    MPOP_OUT = (LONG)mdata;
+    return gem_if(AES_CTRL_CODE(MENU_POPUP, 2, 1, 2));
+}
+#endif
+
 
 /*
  *  Object Manager
